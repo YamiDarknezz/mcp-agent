@@ -10,4 +10,18 @@ El origen se configura por instalación con `MCP_AGENT_SERVER_URL`, por ejemplo 
 
 Instala [`requirements.txt`](requirements.txt) en un entorno virtual. Para registrar o emparejar una laptop, sigue [primera activación](../docs/primera-activacion.md). Se usa Administrador de credenciales en Windows, Keychain en macOS o Secret Service en Linux; si no hay almacén disponible, el alta falla sin guardar la clave en un archivo.
 
-Configura tu runtime para ejecutar Python de ese entorno con la ruta absoluta a [`relay_mcp.py`](relay_mcp.py). Pasa `MCP_AGENT_SERVER_URL` apuntando a tu servicio. La herramienta `status` comprueba la salud y si la laptop está registrada; no devuelve credenciales. No pongas códigos ni claves en la configuración MCP.
+Configura tu runtime para ejecutar Python de ese entorno con la ruta absoluta a [`relay_mcp.py`](relay_mcp.py). Pasa `MCP_AGENT_SERVER_URL` apuntando a tu servicio. No pongas códigos ni claves en la configuración MCP.
+
+El MCP ofrece:
+
+| Herramienta | Qué hace |
+|---|---|
+| `status` | Salud del servicio y si la laptop está registrada. |
+| `create_project(name, slug?)` | Crea el proyecto y su `main` en una sola operación. |
+| `list_projects(limit?, cursor?)` | Lista los proyectos visibles para tu cuenta. |
+| `create_subchannel(parent_id, name, slug?, access?)` | Crea un subcanal de trabajo; `access` es `inherit` o `restricted`. |
+| `relay_help` | Explica las herramientas y lo que aún no existe. |
+
+No hay que darle comandos al agente: OpenCode descubre nombres, parámetros y descripciones. Podrás decir «crea un canal para Tesis». Ninguna herramienta acepta códigos de invitación ni credenciales.
+
+**Para actualizar una laptop:** reinicia el proceso MCP (o reconecta `relay` en `/mcps`) para que cargue el nuevo catálogo. La identidad local no cambia.

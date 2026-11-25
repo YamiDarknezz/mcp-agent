@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from server import identity, identity_api, settings
+from server import identity, identity_api, settings, workspace_api
 
 
 @asynccontextmanager
@@ -33,7 +33,19 @@ app = FastAPI(
     openapi_url=None,
 )
 app.include_router(identity_api.router)
-app.add_middleware(identity_api.IdentityBodyLimit)
+app.include_router(workspace_api.router)
+
+
+class BodyLimit:
+    def __init__(self, app):
+        self.inner = identity_api.IdentityBodyLimit(app)
+        self.workspace = workspace_api.WorkspaceBodyLimit(self.inner)
+
+    async def __call__(self, scope, receive, send):
+        await self.workspace(scope, receive, send)
+
+
+app.add_middleware(BodyLimit)
 
 
 @app.exception_handler(RequestValidationError)
@@ -67,6 +79,14 @@ async def ready(request: Request):
                     AND has_table_privilege('security_events', 'INSERT')
                 """))
                 if not instance:
+                    return JSONResponse({"status": "not_ready"}, status_code=503)
+                tables = await connection.scalar(text("""
+                    SELECT count(*) = 5 FROM information_schema.tables
+                    WHERE table_schema = 'public' AND table_name = ANY(ARRAY[
+                        'users','devices','channels','channel_memberships','channel_subscriptions'
+                    ])
+                """))
+                if not tables:
                     return JSONResponse({"status": "not_ready"}, status_code=503)
     except (OSError, SQLAlchemyError, TimeoutError):
         return JSONResponse({"status": "not_ready"}, status_code=503)

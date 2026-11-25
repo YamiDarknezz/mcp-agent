@@ -87,8 +87,9 @@ def upgrade() -> None:
     if role := runtime_db_role():
         # The role is deployment configuration. Quote its identifier, not a SQL literal.
         quoted = op.get_bind().dialect.identifier_preparer.quote_identifier(role)
-        op.execute(f"GRANT SELECT ON installation, users, devices, enrollment_codes, device_proofs TO {quoted}")
+        op.execute(f"GRANT SELECT ON installation, users, devices, enrollment_codes, device_proofs, security_events TO {quoted}")
         op.execute(f"GRANT INSERT ON users, devices, enrollment_codes, device_proofs, security_events TO {quoted}")
+        op.execute(f"GRANT UPDATE (display_name, declared_email) ON users TO {quoted}")
         op.execute(f"GRANT UPDATE (operator_user_id, activated_at) ON installation TO {quoted}")
         op.execute(f"GRANT UPDATE (revoked_at) ON devices TO {quoted}")
         op.execute(

@@ -147,15 +147,15 @@ class DeviceVault:
         return key
 
 
-def _request(origin, path, payload):
+def request_json(origin, path, payload, *, max_bytes=8192):
     req = Request(
         origin + path, data=json.dumps(payload).encode(), method="POST",
         headers={"Accept": "application/json", "Content-Type": "application/json"},
     )
     try:
         with opener().open(req, timeout=9) as response:
-            raw = response.read(8193)
-            if response.status != 200 or len(raw) > 8192:
+            raw = response.read(max_bytes + 1)
+            if response.status != 200 or len(raw) > max_bytes:
                 raise ValueError
             result = json.loads(raw)
             if not isinstance(result, dict):
@@ -169,7 +169,7 @@ def _request(origin, path, payload):
 
 
 def identify(origin, key):
-    result = _request(origin, "/v1/devices/me", {"device_id": key.device_id, "proof": key.proof(origin, "identify")})
+    result = request_json(origin, "/v1/devices/me", {"device_id": key.device_id, "proof": key.proof(origin, "identify")})
     if result.get("device_id") != key.device_id or type(result.get("is_operator")) is not bool:
         raise IdentityError("Invalid device identity response.")
     return result
@@ -178,7 +178,7 @@ def identify(origin, key):
 def enroll(origin, key, code, label, name=None, email=None):
     if not re.fullmatch(r"relay_(?:boot|pair)_[A-Za-z0-9_-]{43}", code):
         raise IdentityError("Invalid enrollment code format.")
-    challenge = _request(
+    challenge = request_json(
         origin, "/v1/enrollment/challenge",
         {"code": code, "device_id": key.device_id, "public_key": _b64(key.private.public_key().public_bytes_raw())},
     ).get("challenge")
@@ -187,12 +187,12 @@ def enroll(origin, key, code, label, name=None, email=None):
     proof = key.proof(
         origin, "enroll", challenge=challenge, device_label=label, display_name=name, declared_email=email,
     )
-    _request(origin, "/v1/enrollment/claim", {"code": code, "device_id": key.device_id, "proof": proof})
+    request_json(origin, "/v1/enrollment/claim", {"code": code, "device_id": key.device_id, "proof": proof})
     return identify(origin, key)
 
 
 def issue_pair_code(origin, key):
-    result = _request(
+    result = request_json(
         origin, "/v1/devices/pair-code",
         {"device_id": key.device_id, "proof": key.proof(origin, "pair")},
     )

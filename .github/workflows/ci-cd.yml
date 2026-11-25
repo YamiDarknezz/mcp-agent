@@ -21,10 +21,11 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.13'
-      - name: Test the laptop client
+      - name: Test the laptop client and its MCP tools
         run: |
           python -m pip install -r client/requirements.txt
           python -m unittest discover -s client/tests -v
+          python -m client.test_mcp_tools
       - name: Validate production Compose without secrets
         run: |
           set -euo pipefail

@@ -47,6 +47,10 @@ async def _row(conn: AsyncConnection, query: str, **params):
 
 
 async def _audit(conn, action, subject=None):
+    await record_security_event(conn, action, subject)
+
+
+async def record_security_event(conn, action, subject=None):
     await _run(
         conn, "INSERT INTO security_events (id, action, subject_id) VALUES (:id, :action, :subject)",
         id=uuid4(), action=action, subject=subject,
@@ -248,6 +252,12 @@ async def _authenticate(conn, device_id, proof, audience, purpose):
 
 async def identify(conn, device_id, proof, audience):
     device = await _authenticate(conn, device_id, proof, audience, "identify")
+    return await _summary(conn, device_id, device["user_id"])
+
+
+async def authenticate_workspace(conn, device_id, proof, audience):
+    """Authorize a workspace operation with a proof scoped to that purpose."""
+    device = await _authenticate(conn, device_id, proof, audience, "workspace")
     return await _summary(conn, device_id, device["user_id"])
 
 

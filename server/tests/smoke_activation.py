@@ -1,4 +1,8 @@
-"""Real PostgreSQL and HTTP smoke, only against a fresh disposable database."""
+"""Real PostgreSQL and HTTP smoke, only against a fresh disposable database.
+
+The client signs proofs for the configured public origin. For local test stacks published
+on another loopback port, set RELAY_SMOKE_ORIGIN before running this file.
+"""
 
 import asyncio
 import base64
@@ -18,6 +22,8 @@ from sqlalchemy import text
 
 from server import identity, settings
 
+# This smoke runs inside the api container, where uvicorn listens on 8000.
+# Proof audiences still come from settings.public_url() (MCP_PUBLIC_URL/MCP_DEV_PORT).
 _HTTP = "http://127.0.0.1:8000"
 
 
@@ -145,8 +151,41 @@ def run():
     asyncio.run(console(identity.revoke_device, second.id))
     assert post("/v1/devices/me", second.proof("identify"))[0] == 401
     assert challenge(stale["code"], TestKey())[0] == 401
-    assert post("/v1/devices/me", first.proof("identify"))[0] == 200
-    print("Verified one-time activation, replay, pairing and revocation in PostgreSQL and HTTP.")
+    second_proof = second.proof("workspace")
+    def workspace(path, key=first, **body):
+        # proof() already returns {"device_id", "proof"}; merge it, don't nest it.
+        return post("/v1/workspace/" + path, {**key.proof("workspace"), **body})
+
+    assert workspace("projects", name="Tesis", unexpected="sentinel")[0] == 422
+    unregistered = TestKey()
+    assert workspace("list-projects", key=unregistered)[0] == 401
+    replay = first.proof("identify")
+    assert post("/v1/devices/me", replay)[0] == 200
+    assert post("/v1/devices/me", replay)[0] == 401
+    status, created = workspace("projects", name="Tesis")
+    assert status == 200 and created["created"] is True
+    root = created["project"]
+    main = created["main"]
+    assert root["kind"] == "project" and main["kind"] == "main" and main["name"] == "main"
+    assert workspace("projects", name="Tesis") == (200, created | {"created": False})
+    assert workspace("subchannels", parent_id=main["id"], name="not-allowed", access="inherit")[0] == 403
+    status, front = workspace("subchannels", parent_id=root["id"], name="Frontend")
+    assert status == 200 and front["created"] is True and front["channel"]["kind"] == "work"
+    status, screen = workspace("subchannels", parent_id=front["channel"]["id"], name="Pantalla")
+    assert status == 200 and screen["created"] is True
+    status, private = workspace("subchannels", parent_id=root["id"], name="Privado", access="restricted")
+    assert status == 200 and private["channel"]["inherits_access"] is False
+    status, projects = workspace("list-projects")
+    assert status == 200 and any(item["id"] == root["id"] for item in projects["items"])
+    status, channels = workspace("list-channels", project_id=root["id"])
+    assert status == 200
+    visible = {item["id"]: item for item in channels["items"]}
+    assert main["id"] in visible and front["channel"]["id"] in visible
+    # The creator holds an explicit owner grant on the restricted channel, so it is visible.
+    assert private["channel"]["id"] in visible
+    assert next(item for item in channels["items"] if item["id"] == private["channel"]["id"])["inherits_access"] is False
+    assert workspace("list-projects", key=second, limit=50)[0] == 401
+    print("Verified activation, replay, pairing, revocation and workspace scoping in PostgreSQL and HTTP.")
 
 
 if __name__ == "__main__":
