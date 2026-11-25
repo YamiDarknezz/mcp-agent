@@ -1,0 +1,49 @@
+# Planes privados de este proyecto
+/.temp/
+
+# Configuración local y material sensible
+.env
+.env.*
+!.env.example
+*.local.toml
+*.local.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.kdbx
+*.token
+/secrets/
+.credentials/
+
+# Estado local y archivos generados por la aplicación
+/.mcp-agent/
+/data/
+/backups/
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.dump
+*.log
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Herramientas y sistema operativo
+node_modules/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
