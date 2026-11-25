@@ -35,8 +35,8 @@ compose=(
 )
 "${compose[@]}" config --quiet
 "${compose[@]}" build api
-"${compose[@]}" run --rm --no-deps -T migrate
-"${compose[@]}" run --rm --no-deps -T migrate python -m server.migrate --check
+"${compose[@]}" run --rm --no-deps --interactive=false -T migrate
+"${compose[@]}" run --rm --no-deps --interactive=false -T migrate python -m server.migrate --check
 "${compose[@]}" up -d --no-build --wait --wait-timeout 90 api
 
 origin="$("${compose[@]}" exec -T api python -c 'from server.settings import public_url; print(public_url())')"

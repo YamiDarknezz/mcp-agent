@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 # Install outside the checkout and bind this command to one SSH key.
 if [[ $# -ne 2 || ! ${SSH_ORIGINAL_COMMAND:-} =~ ^deploy\ ([0-9a-f]{40})$ ]]; then
@@ -16,4 +17,7 @@ git -C "$repo_dir" fetch --no-tags origin refs/heads/main
   printf '%s\n' 'The commit is not the tip of origin/main.' >&2
   exit 1
 }
-git -C "$repo_dir" show "$sha:scripts/deploy.sh" | bash -s -- "$sha" "$repo_dir" "$deploy_dir"
+payload="$(mktemp "$deploy_dir/.deploy-script.XXXXXXXX")"
+trap 'rm -f -- "$payload"' EXIT
+git -C "$repo_dir" show "$sha:scripts/deploy.sh" > "$payload"
+bash "$payload" "$sha" "$repo_dir" "$deploy_dir" </dev/null

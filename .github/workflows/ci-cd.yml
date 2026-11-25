@@ -26,9 +26,7 @@ jobs:
           test "$("${compose[@]}" config --services | sort)" = $'api\nmigrate'
           bash -n scripts/deploy.sh
           bash -n scripts/ssh-receiver.sh
-          if SSH_ORIGINAL_COMMAND='sh' bash scripts/ssh-receiver.sh "$PWD" "$PWD"; then
-            exit 1
-          fi
+          bash scripts/test-ssh-receiver.sh
       - name: Build, migrate, and verify the local stack
         run: |
           set -euo pipefail
@@ -76,7 +74,7 @@ jobs:
 
           umask 077
           ssh_dir="$(mktemp -d)"
-          trap 'rm -f -- "$ssh_dir/key" "$ssh_dir/known_hosts"; rmdir -- "$ssh_dir"' EXIT
+          trap 'rm -f -- "$ssh_dir/key" "$ssh_dir/known_hosts" "$ssh_dir/deploy.log"; rmdir -- "$ssh_dir"' EXIT
           printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/key"
           printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
           unset VPS_SSH_KEY VPS_KNOWN_HOSTS
@@ -84,4 +82,8 @@ jobs:
             -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
             -o "UserKnownHostsFile=$ssh_dir/known_hosts" -o GlobalKnownHostsFile=/dev/null \
             -o ConnectTimeout=10 -- "$VPS_USER@$VPS_HOST" \
-            deploy "$GITHUB_SHA"
+            deploy "$GITHUB_SHA" | tee "$ssh_dir/deploy.log"
+          grep -Fxq "Deployed $GITHUB_SHA; HTTPS checks passed." "$ssh_dir/deploy.log" || {
+            echo 'The VPS did not confirm the final HTTPS smoke tests.' >&2
+            exit 1
+          }
