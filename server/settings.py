@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+import re
 from urllib.parse import urlsplit
 
 from sqlalchemy.engine import URL, make_url
@@ -60,20 +61,38 @@ def deployment_mode() -> str:
     return mode
 
 
+def enrollment_code_ttl() -> int:
+    try:
+        value = int(os.getenv("MCP_ENROLLMENT_TTL_SECONDS", "900"))
+    except ValueError:
+        raise ConfigurationError("Invalid enrollment code lifetime.") from None
+    if not 60 <= value <= 3600:
+        raise ConfigurationError("Enrollment code lifetime must be between 60 and 3600 seconds.")
+    return value
+
+
+def runtime_db_role() -> str | None:
+    role = os.getenv("MCP_RUNTIME_DB_ROLE") or None
+    if role and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", role):
+        raise ConfigurationError("Invalid MCP_RUNTIME_DB_ROLE.")
+    return role
+
+
 def public_url() -> str:
     mode = deployment_mode()
     value = os.getenv("MCP_PUBLIC_URL")
     if not value and mode == "development":
         value = "http://127.0.0.1:8765"
     try:
-        if not value or any(char.isspace() for char in value):
+        if not value or not value.isascii() or any(
+            ord(char) <= 32 or ord(char) == 127 or char in "\\?#" for char in value
+        ):
             raise ValueError
         parts = urlsplit(value)
         if not parts.hostname or parts.username is not None or parts.password is not None:
             raise ValueError
-        if parts.path not in {"", "/"} or "?" in value or "#" in value:
+        if parts.path not in {"", "/"} or parts.port == 0:
             raise ValueError
-        _ = parts.port
         allowed_http = mode == "development" and parts.hostname in {
             "127.0.0.1", "::1", "localhost",
         }
@@ -83,4 +102,4 @@ def public_url() -> str:
         raise ConfigurationError(
             "MCP_PUBLIC_URL must be an HTTPS origin (loopback HTTP for development only)."
         ) from None
-    return value.rstrip("/")
+    return f"{parts.scheme}://{parts.netloc}"

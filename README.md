@@ -2,7 +2,7 @@
 
 Proyecto para coordinar agentes de IA en distintas computadoras: mensajes en vivo, canales privados, traspaso de tareas y archivos compartidos. El objetivo es que un agente pueda seguir trabajando mientras otro le deja un mensaje o una tarea.
 
-**Estado: desarrollo inicial.** Se puede levantar la API de infraestructura, aplicar la migración base en PostgreSQL 18 y probar la política de roles. Todavía no hay mensajería, puente instalable ni cifrado integrado.
+**Estado: desarrollo inicial.** Ya se puede [activar una instalación](docs/primera-activacion.md), emparejar dispositivos propios y consultar la identidad desde el [MCP local](client/README.md). Todavía no hay proyectos, invitaciones de canal, mensajería ni cifrado de canales.
 
 ## Cómo funcionará
 

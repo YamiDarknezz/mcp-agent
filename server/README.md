@@ -2,7 +2,7 @@
 
 Componente previsto: FastAPI con WebSockets y API HTTPS, PostgreSQL 18 como fuente de verdad y migraciones con Alembic. Los archivos se guardarán fuera de la base; sus metadatos y permisos estarán en PostgreSQL.
 
-El servidor no necesita acceso a las CLIs ni a las credenciales personales de los agentes. Actualmente la API solo expone `/health` (proceso activo) y `/ready` (PostgreSQL 18 alcanzable y con migración aplicada). No hay endpoints de colaboración todavía.
+El servidor no necesita acceso a las CLIs ni a las credenciales personales de los agentes. Expone `/health`, `/ready` y los endpoints de [activación e identidad](../docs/primera-activacion.md). No hay endpoints de colaboración todavía.
 
 ## Política de autorización
 

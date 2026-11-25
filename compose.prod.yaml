@@ -5,6 +5,7 @@ services:
       MCP_PUBLIC_URL: https://${MCP_DOMAIN:?configura MCP_DOMAIN}
       DATABASE_URL_FILE: /run/mcp-config/database-url
       REDIS_URL_FILE: ${MCP_REDIS_URL_FILE:-}
+      MCP_ENROLLMENT_TTL_SECONDS: ${MCP_ENROLLMENT_TTL_SECONDS:-900}
     volumes:
       - type: bind
         source: ${MCP_RUNTIME_SECRETS_DIR:?configura MCP_RUNTIME_SECRETS_DIR}
@@ -23,11 +24,17 @@ services:
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-mcp-agent}.tls=true"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-mcp-agent}.tls.certresolver=${MCP_TRAEFIK_RESOLVER:-letsencrypt}"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-mcp-agent}.service=${COMPOSE_PROJECT_NAME:-mcp-agent}"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-mcp-agent}.observability.accesslogs=false"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-mcp-agent}.observability.tracing=false"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-mcp-agent}.middlewares=${COMPOSE_PROJECT_NAME:-mcp-agent}-limits"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-mcp-agent}-limits.ratelimit.average=20"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME:-mcp-agent}-limits.ratelimit.burst=30"
       - "traefik.http.services.${COMPOSE_PROJECT_NAME:-mcp-agent}.loadbalancer.server.port=8000"
 
   migrate:
     environment:
       DATABASE_URL_FILE: /run/mcp-migration-database-url
+      MCP_RUNTIME_DB_ROLE: ${MCP_RUNTIME_DB_ROLE:-}
     volumes:
       - type: bind
         source: ${MCP_MIGRATION_DATABASE_URL_PATH:?configura MCP_MIGRATION_DATABASE_URL_PATH}
