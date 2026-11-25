@@ -1,0 +1,12 @@
+services:
+  api:
+    environment:
+      REDIS_URL: redis://redis:6379/0
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 3s
+      retries: 10

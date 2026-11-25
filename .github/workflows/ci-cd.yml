@@ -1,0 +1,86 @@
+name: CI/CD
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests and PostgreSQL 18 smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Validate production Compose without secrets
+        run: |
+          set -euo pipefail
+          compose=(docker compose --env-file .env.example -f compose.yaml -f compose.prod.yaml --profile tools)
+          "${compose[@]}" config --quiet
+          test "$("${compose[@]}" config --services | sort)" = $'api\nmigrate'
+          bash -n scripts/deploy.sh
+          bash -n scripts/ssh-receiver.sh
+          if SSH_ORIGINAL_COMMAND='sh' bash scripts/ssh-receiver.sh "$PWD" "$PWD"; then
+            exit 1
+          fi
+      - name: Build, migrate, and verify the local stack
+        run: |
+          set -euo pipefail
+          compose=(docker compose -p mcp-agent-ci -f compose.yaml -f compose.dev.yaml -f compose.redis.dev.yaml)
+          "${compose[@]}" up -d --wait --wait-timeout 60 db redis
+          "${compose[@]}" build api
+          "${compose[@]}" run --rm --no-deps -T api python -m unittest discover -s server/tests -v
+          "${compose[@]}" run --rm --no-deps -T migrate
+          "${compose[@]}" run --rm --no-deps -T migrate python -m server.migrate --check
+          "${compose[@]}" up -d --no-build --wait --wait-timeout 90 api
+          test "$(curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8765/health)" = '{"status":"ok"}'
+          test "$(curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8765/ready)" = '{"status":"ready"}'
+          test "$("${compose[@]}" exec -T redis redis-cli ping)" = PONG
+
+  deploy:
+    name: Deploy the tested commit to the VPS
+    needs: test
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      vars.VPS_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    concurrency:
+      group: mcp-agent-production
+      cancel-in-progress: false
+    steps:
+      - name: Deploy over SSH with host verification
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT }}
+        run: |
+          set -euo pipefail
+          [[ -n "$VPS_SSH_KEY" && -n "$VPS_KNOWN_HOSTS" ]]
+          [[ "$VPS_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$VPS_USER" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]
+          port="${VPS_SSH_PORT:-22}"
+          [[ "$port" =~ ^[0-9]{1,5}$ ]]
+          (( 10#$port >= 1 && 10#$port <= 65535 ))
+
+          umask 077
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -f -- "$ssh_dir/key" "$ssh_dir/known_hosts"; rmdir -- "$ssh_dir"' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" | tr -d '\r' > "$ssh_dir/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" | tr -d '\r' > "$ssh_dir/known_hosts"
+          unset VPS_SSH_KEY VPS_KNOWN_HOSTS
+          ssh -nT -p "$port" -i "$ssh_dir/key" \
+            -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+            -o "UserKnownHostsFile=$ssh_dir/known_hosts" -o GlobalKnownHostsFile=/dev/null \
+            -o ConnectTimeout=10 -- "$VPS_USER@$VPS_HOST" \
+            deploy "$GITHUB_SHA"

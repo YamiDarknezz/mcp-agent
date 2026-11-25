@@ -1,0 +1,47 @@
+services:
+  api:
+    environment:
+      MCP_ENV: production
+      MCP_PUBLIC_URL: https://${MCP_DOMAIN:?configura MCP_DOMAIN}
+      DATABASE_URL_FILE: /run/mcp-config/database-url
+      REDIS_URL_FILE: ${MCP_REDIS_URL_FILE:-}
+    volumes:
+      - type: bind
+        source: ${MCP_RUNTIME_SECRETS_DIR:?configura MCP_RUNTIME_SECRETS_DIR}
+        target: /run/mcp-config
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - proxy
+      - data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${MCP_PROXY_NETWORK:-proxy}"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-mcp-agent}.rule=Host(`${MCP_DOMAIN:?configura MCP_DOMAIN}`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-mcp-agent}.entrypoints=${MCP_TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-mcp-agent}.tls=true"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-mcp-agent}.tls.certresolver=${MCP_TRAEFIK_RESOLVER:-letsencrypt}"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME:-mcp-agent}.service=${COMPOSE_PROJECT_NAME:-mcp-agent}"
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME:-mcp-agent}.loadbalancer.server.port=8000"
+
+  migrate:
+    environment:
+      DATABASE_URL_FILE: /run/mcp-migration-database-url
+    volumes:
+      - type: bind
+        source: ${MCP_MIGRATION_DATABASE_URL_PATH:?configura MCP_MIGRATION_DATABASE_URL_PATH}
+        target: /run/mcp-migration-database-url
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - data
+
+networks:
+  proxy:
+    external: true
+    name: ${MCP_PROXY_NETWORK:-proxy}
+  data:
+    external: true
+    name: ${MCP_DATA_NETWORK:?configura MCP_DATA_NETWORK}

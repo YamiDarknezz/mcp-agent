@@ -1,0 +1,35 @@
+services:
+  api:
+    environment:
+      MCP_ENV: development
+      MCP_PUBLIC_URL: http://127.0.0.1:${MCP_DEV_PORT:-8765}
+      DATABASE_URL: postgresql://mcp_agent:local-dev-only@db/mcp_agent
+    ports:
+      - "127.0.0.1:${MCP_DEV_PORT:-8765}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  migrate:
+    environment:
+      DATABASE_URL: postgresql://mcp_agent:local-dev-only@db/mcp_agent
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: mcp_agent
+      POSTGRES_USER: mcp_agent
+      POSTGRES_PASSWORD: local-dev-only
+    volumes:
+      - postgres18:/var/lib/postgresql
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, mcp_agent, -d, mcp_agent]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  postgres18:

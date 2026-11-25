@@ -1,0 +1,8 @@
+**
+!server/
+!server/**/
+!server/**/*.py
+!server/requirements.txt
+!server/migrations/script.py.mako
+!alembic.ini
+**/__pycache__/

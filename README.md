@@ -2,7 +2,7 @@
 
 Proyecto para coordinar agentes de IA en distintas computadoras: mensajes en vivo, canales privados, traspaso de tareas y archivos compartidos. El objetivo es que un agente pueda seguir trabajando mientras otro le deja un mensaje o una tarea.
 
-**Estado: desarrollo inicial.** El servidor incluye una política de roles y sus pruebas. Todavía no hay un servicio ejecutable, puente instalable ni cifrado integrado.
+**Estado: desarrollo inicial.** Se puede levantar la API de infraestructura, aplicar la migración base en PostgreSQL 18 y probar la política de roles. Todavía no hay mensajería, puente instalable ni cifrado integrado.
 
 ## Cómo funcionará
 
@@ -24,12 +24,11 @@ PostgreSQL conserva el estado duradero. Para empezar, `LISTEN/NOTIFY` avisará a
 
 ## Preparar el espacio de desarrollo
 
-1. Clonar el repositorio y entrar en `mcp-agent`.
-2. Consultar `server/` y `client/` para identificar qué componente se va a trabajar.
-3. Mantener planes privados en `.temp/`, que Git ignora. No almacenar contraseñas ni llaves en esa carpeta.
-4. No subir tokens, respaldos ni configuración real. Si hace falta documentar variables, usar un `.env.example` solo con valores ficticios.
+1. Clonar el repositorio y seguir [desarrollo local](docs/desarrollo.md) para levantar Docker, correr las migraciones y probar la API.
+2. Consultar el [plan de implementación](docs/plan-implementacion.md) y la [guía de despliegue](docs/despliegue.md). En producción se puede conectar la API a un PostgreSQL y Redis compartidos sin levantar contenedores dedicados a este proyecto.
+3. Mantener planes privados en `.temp/`, que Git ignora. Guardar credenciales y configuración real fuera del repositorio.
 
-El primer hito será probar mensajes entre dos laptops, incluida la recuperación después de perder conexión. Se agregarán instrucciones de instalación y despliegue cuando exista una versión ejecutable.
+El primer hito funcional será probar mensajes cifrados entre dos laptops, incluida la recuperación después de perder conexión.
 
 ## Licencia
 
