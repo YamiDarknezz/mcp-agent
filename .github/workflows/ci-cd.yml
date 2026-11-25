@@ -34,6 +34,7 @@ jobs:
           set -euo pipefail
           compose=(docker compose -p mcp-agent-ci -f compose.yaml -f compose.dev.yaml -f compose.redis.dev.yaml)
           "${compose[@]}" up -d --wait --wait-timeout 60 db redis
+          chmod -R go-rwx server alembic.ini
           "${compose[@]}" build api
           "${compose[@]}" run --rm --no-deps -T api python -m unittest discover -s server/tests -v
           "${compose[@]}" run --rm --no-deps -T migrate
