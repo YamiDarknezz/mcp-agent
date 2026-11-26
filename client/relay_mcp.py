@@ -14,6 +14,7 @@ from mcp.server.fastmcp import FastMCP
 if __package__:
     from .relay_live import BridgeState, run_owned_bridge
     from .relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
+    from .relay_announcements import announce as api_announce_channel, list_announcements as api_list_announcements
     from .relay_tasks import propose as api_propose_task, list_tasks as api_list_tasks, claim as api_claim_task, release as api_release_task, complete as api_complete_task
     from .relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from .relay_workspace import (
@@ -38,6 +39,7 @@ if __package__:
 else:
     from relay_live import BridgeState, run_owned_bridge
     from relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
+    from relay_announcements import announce as api_announce_channel, list_announcements as api_list_announcements
     from relay_tasks import propose as api_propose_task, list_tasks as api_list_tasks, claim as api_claim_task, release as api_release_task, complete as api_complete_task
     from relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from relay_workspace import (
@@ -318,6 +320,20 @@ def create_server(origin: str) -> FastMCP:
         return await asyncio.to_thread(_safe, origin, lambda: _channel_details(origin, bridge_state, channel_id))
 
     @mcp.tool()
+    async def announce_channel(channel_id: str, note: str = "") -> dict:
+        """Inform another laptop about a channel via encrypted main. Does not grant access or follow it."""
+        return await asyncio.to_thread(_safe, origin, lambda: api_announce_channel(origin, channel_id, note))
+
+    @mcp.tool()
+    async def list_channel_announcements(after: int = 0, limit: int = 10) -> dict:
+        """Read deduplicated channel announcements already synced into the local inbox."""
+        if after < 0 or not 1 <= limit <= 10:
+            return {"error": "after must be nonnegative and limit must be between 1 and 10"}
+        return await asyncio.to_thread(
+            _safe, origin, lambda: api_list_announcements(origin, after, limit),
+        )
+
+    @mcp.tool()
     async def my_identity() -> dict:
         """Show this device and account IDs so collaborators can address mentions."""
         def action():
@@ -380,7 +396,7 @@ def create_server(origin: str) -> FastMCP:
             "tools": [
                 "status", "create_project", "list_projects", "create_subchannel", "set_subscription", "list_subscriptions",
                 "setup_encryption", "encryption_status", "share_channel_key",
-                "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "read_inbox", "channel_status", "my_identity", "list_alerts",
+                "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "read_inbox", "channel_status", "my_identity", "list_alerts", "announce_channel", "list_channel_announcements",
                 "propose_task", "list_tasks", "claim_task", "release_task", "complete_task", "relay_help",
             ],
             "project": "The root is a container with no chat. Create it with a name; Relay creates 'main' automatically.",
