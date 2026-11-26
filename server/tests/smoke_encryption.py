@@ -9,6 +9,8 @@ import base64
 import json
 import os
 import time
+from websockets.asyncio.client import connect
+from websockets.exceptions import ConnectionClosed
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -208,6 +210,7 @@ def main():
         "envelopes": {str(reader.id): envelope_for(reader)},
     })
     assert status == 403
+
     status, published = post("/v1/keys/publish", {
         **alice.proof("workspace"), "channel_id": channel_id, "key_id": active_key_id,
         "envelopes": {str(alice.id): envelope_for(alice), str(bob.id): envelope_for(bob)},
@@ -287,7 +290,30 @@ def main():
         assert plaintext not in bytes(stored_message)
     asyncio.run(console(inspect))
 
-    print("Verified channel-key access checks, opaque envelopes and local crypto round trip.")
+    async def live_smoke():
+        async with connect("ws://127.0.0.1:8000/v1/live", proxy=None, open_timeout=5) as socket:
+            await socket.send(json.dumps({**bob.proof("workspace"), "channel_id": channel_id}))
+            assert json.loads(await socket.recv()) == {"type": "ready"}
+            op = uuid4()
+            live_nonce, live_ciphertext = crypto.encrypt_message(
+                channel_key, channel_id, op.int & ((1 << 64) - 1), b"live-test",
+            )
+            live_status, _ = await asyncio.to_thread(post, "/v1/workspace/send-message", {
+                **alice.proof("workspace"), "channel_id": channel_id, "operation_id": str(op),
+                "nonce": live_nonce, "ciphertext": live_ciphertext,
+            })
+            assert live_status == 200
+            event = json.loads(await asyncio.wait_for(socket.recv(), timeout=8))
+            assert event["type"] == "changed"
+            await console(identity.revoke_device, bob.id)
+            try:
+                while True:
+                    await asyncio.wait_for(socket.recv(), timeout=8)
+            except ConnectionClosed as error:
+                assert error.rcvd and error.rcvd.code == 1008
+    asyncio.run(live_smoke())
+
+    print("Verified key access, encrypted messages, WebSocket notifications and device revocation.")
 
 
 if __name__ == "__main__":

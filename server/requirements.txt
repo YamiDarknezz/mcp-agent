@@ -5,3 +5,4 @@ psycopg[binary]==3.3.9
 PyJWT==2.15.1
 SQLAlchemy[asyncio]==2.1.9
 uvicorn==0.54.0
+websockets==16.0

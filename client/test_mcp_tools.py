@@ -11,7 +11,7 @@ from mcp.client.stdio import stdio_client
 EXPECTED = {
     "status", "create_project", "list_projects", "create_subchannel",
     "setup_encryption", "encryption_status", "share_channel_key",
-    "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "relay_help",
+    "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "read_inbox", "relay_help",
 }
 
 

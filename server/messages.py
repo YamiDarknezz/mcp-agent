@@ -35,6 +35,8 @@ async def send(conn, user_id, body):
         FROM channel_messages WHERE channel_id=:channel RETURNING seq
     """, channel=body.channel_id, operation=body.operation_id, device=body.device_id,
         nonce=nonce, ciphertext=ciphertext)
+    await conn.execute(text("SELECT pg_notify('relay_messages', :channel)"),
+                       {"channel": str(body.channel_id)})
     return {"seq": row["seq"], "operation_id": str(body.operation_id)}
 
 

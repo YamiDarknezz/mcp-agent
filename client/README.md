@@ -28,6 +28,7 @@ El MCP ofrece:
 | `send_message` | Envía un mensaje de prueba cifrado con la clave local del canal. |
 | `read_messages` | Consulta y descifra una página después de una secuencia. |
 | `retry_messages` | Reintenta los mensajes cifrados pendientes conservando su ID de operación. |
+| `read_inbox` | Lee el buzón cifrado local que sincroniza el puente en vivo. |
 | `relay_help` | Explica las herramientas y lo que aún no existe. |
 
 No hay que darle comandos al agente: OpenCode descubre nombres, parámetros y descripciones. Podrás decir «crea un canal para Tesis». Ninguna herramienta acepta códigos de invitación ni credenciales.
@@ -47,6 +48,14 @@ python client\relayctl.py --server https://relay.darknezz.dev trust-device ID_DE
 
 Después usa `share_channel_key` con el ID del canal y `load_channel_key` en la otra laptop. Las claves de canal y las huellas fijadas se guardan en el almacén seguro del sistema. Los sobres antiguos sin firma se rechazan; para pruebas nuevas crea un canal y una clave nuevos, sin eliminar datos anteriores.
 
-Los mensajes son experimentales: aunque los sobres nuevos van firmados y los dispositivos remotos deben fijarse, aún faltan revisión del protocolo, rotación y protección contra omisiones o reordenamientos por el servidor. No usar datos sensibles. La lectura es manual y no existe entrega en vivo. La cola local conserva solo ciphertext e IDs por servidor y dispositivo; si `send_message` devuelve `pending`, usa `retry_messages`. Los reintentos todavía no son automáticos.
+Para probar avisos en vivo, ejecuta el puente como proceso separado, una vez por canal:
+
+```powershell
+python -m client.relay_live --server https://relay.darknezz.dev --channel ID_DEL_CANAL
+```
+
+El puente guarda mensajes cifrados y su cursor localmente y reintenta la cola de salida mientras está conectado. La herramienta `read_inbox` permite leer el buzón sin interrumpir al agente. Debe ejecutarse de forma explícita: todavía no hay gestor automático del proceso ni suscripciones persistentes.
+
+Los mensajes son experimentales: aunque los sobres nuevos van firmados y los dispositivos remotos deben fijarse, aún faltan revisión del protocolo, rotación y protección contra omisiones o reordenamientos por el servidor. No usar datos sensibles.
 
 **Para actualizar una laptop:** reinicia el proceso MCP (o reconecta `relay` en `/mcps`) para que cargue el nuevo catálogo. La identidad local no cambia.

@@ -6,11 +6,13 @@ if __package__:
     from . import relay_keys
     from .relay_identity import DeviceVault, IdentityError
     from .relay_outbox import Outbox
+    from .relay_inbox import Inbox
     from .relay_workspace import _call
 else:
     import relay_keys
     from relay_identity import DeviceVault, IdentityError
     from relay_outbox import Outbox
+    from relay_inbox import Inbox
     from relay_workspace import _call
 
 
@@ -71,3 +73,20 @@ def read(origin: str, channel_id: str, after: int = 0, limit: int = 10) -> dict:
         except (ValueError, UnicodeDecodeError):
             raise IdentityError("No se pudo descifrar un mensaje del canal.") from None
     return result
+
+
+def read_inbox(origin: str, channel_id: str, after: int = 0, limit: int = 10) -> dict:
+    device = DeviceVault(origin).load()
+    if device is None:
+        raise IdentityError("Esta laptop no está registrada en Relay.")
+    inbox = Inbox(origin, device.device_id)
+    items = inbox.page(channel_id, after, limit)
+    for item in items:
+        try:
+            item["content"] = relay_keys.decrypt(
+                origin, channel_id, _aad_sequence(item["operation_id"]),
+                item.pop("nonce"), item.pop("ciphertext"),
+            ).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            raise IdentityError("No se pudo descifrar un mensaje del buzón.") from None
+    return {"messages": items, "cursor": inbox.cursor(channel_id)}
