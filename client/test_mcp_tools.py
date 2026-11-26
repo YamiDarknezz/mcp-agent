@@ -13,7 +13,7 @@ EXPECTED = {
     "create_subchannel", "set_subscription", "list_subscriptions",
     "setup_encryption", "encryption_status", "share_channel_key",
     "load_channel_key", "ensure_channel_key", "channel_status", "crypto_selftest",
-    "send_message", "read_messages", "retry_messages", "read_inbox", "my_identity", "list_alerts",
+    "send_message", "read_messages", "retry_messages", "read_inbox", "my_identity", "list_alerts", "invite_status",
     "announce_channel", "list_channel_announcements",
     "propose_task", "list_tasks", "claim_task", "release_task", "complete_task", "relay_help",
 }
@@ -37,7 +37,8 @@ async def verify():
                 result = await session.call_tool("relay_help", {})
                 assert not result.isError
                 payload = result.structuredContent or json.loads(result.content[0].text)
-                assert "invitations" in str(payload["not_yet"])
+                assert "relayctl" in str(payload["invitations"])
+                assert "invite_status" in str(payload["tools"])
                 # Each tool must call its API function, not recurse into the tool itself.
                 created = await session.call_tool("create_project", {"name": "Tesis"})
                 assert not created.isError

@@ -16,6 +16,7 @@ if __package__:
     from .relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
     from .relay_announcements import announce as api_announce_channel, list_announcements as api_list_announcements
     from .relay_tasks import propose as api_propose_task, list_tasks as api_list_tasks, claim as api_claim_task, release as api_release_task, complete as api_complete_task
+    from .relay_invites import status as api_invite_status
     from .relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from .relay_workspace import (
         create_project as api_create_project,
@@ -46,6 +47,7 @@ else:
     from relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
     from relay_announcements import announce as api_announce_channel, list_announcements as api_list_announcements
     from relay_tasks import propose as api_propose_task, list_tasks as api_list_tasks, claim as api_claim_task, release as api_release_task, complete as api_complete_task
+    from relay_invites import status as api_invite_status
     from relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from relay_workspace import (
         create_project as api_create_project,
@@ -382,6 +384,13 @@ def create_server(origin: str) -> FastMCP:
         )
 
     @mcp.tool()
+    async def invite_status(channel_id: str) -> dict:
+        """Read-only invite status (counts and expiry). Never issues, returns or redeems a code."""
+        if problem := valid.channel_id(channel_id):
+            return problem
+        return await asyncio.to_thread(_safe, origin, lambda: api_invite_status(origin, channel_id))
+
+    @mcp.tool()
     async def my_identity() -> dict:
         """Show this device and account IDs so collaborators can address mentions."""
         def action():
@@ -448,7 +457,7 @@ def create_server(origin: str) -> FastMCP:
                 "create_subchannel", "set_subscription", "list_subscriptions",
                 "setup_encryption", "encryption_status", "share_channel_key",
                 "load_channel_key", "ensure_channel_key", "channel_status", "crypto_selftest",
-                "send_message", "read_messages", "retry_messages", "read_inbox", "my_identity", "list_alerts",
+                "send_message", "read_messages", "retry_messages", "read_inbox", "my_identity", "list_alerts", "invite_status",
                 "announce_channel", "list_channel_announcements",
                 "propose_task", "list_tasks", "claim_task", "release_task", "complete_task", "relay_help",
             ],
@@ -456,7 +465,8 @@ def create_server(origin: str) -> FastMCP:
             "subchannel": "Create under a project ID or a work subchannel ID. Use access='restricted' to cut inherited access.",
             "encryption": "Run setup_encryption once, compare fingerprints with the other laptop, then share_channel_key and load_channel_key per channel, or ensure_channel_key to do both idempotently.",
             "tasks": "Propose, claim and complete tasks. The MCP coordinates only; your runtime decides what it can execute.",
-            "not_yet": ["push notifications", "cross-device alert read state", "channel invitations", "file sharing"],
+            "not_yet": ["push notifications", "cross-device alert read state", "file sharing"],
+            "invitations": "Issue and redeem invitations only with relayctl in a private terminal. MCP has invite_status for read-only counts; it never sees a code.",
             "enrollment": "Ask the human to use relayctl in a private terminal; never paste a code into a tool call.",
         }
 
