@@ -139,7 +139,8 @@ def main():
 
     status, project = post("/v1/workspace/projects", {**alice.proof("workspace"), "name": "Tesis"})
     assert status == 200
-    channel_id = project["project"]["id"]
+    root_id = project["project"]["id"]
+    channel_id = project["main"]["id"]
     channel_key = crypto.new_channel_key()
 
     def envelope_for(device):
@@ -148,6 +149,62 @@ def main():
             str(alice.id), str(device.id),
         )
 
+    status, _ = post("/v1/keys/publish", {
+        **alice.proof("workspace"), "channel_id": root_id, "key_id": str(uuid4()),
+        "envelopes": {str(alice.id): envelope_for(alice)},
+    })
+    assert status == 404
+    status, _ = post("/v1/keys/publish", {
+        **alice.proof("workspace"), "channel_id": channel_id, "key_id": str(uuid4()),
+        "envelopes": {str(uuid4()): envelope_for(alice)},
+    })
+    assert status == 404
+
+    # Create isolated fixtures directly: real invitations are not implemented yet.
+    outsider, reader, revoked = Device(), Device(), Device()
+    outsider_user, reader_user, revoked_user = uuid4(), uuid4(), uuid4()
+
+    async def add_fixtures(conn):
+        for device, user_id in ((outsider, outsider_user), (reader, reader_user), (revoked, revoked_user)):
+            await conn.execute(text("INSERT INTO users (id, display_name) VALUES (:id, 'Fixture')"), {"id": user_id})
+            await conn.execute(text("""
+                INSERT INTO devices (id, user_id, label, public_key, encryption_public_key,
+                                     encryption_signature, encryption_updated_at, revoked_at)
+                VALUES (:id, :user_id, 'Fixture', :auth, :enc, :sig, now(),
+                        CASE WHEN :revoked THEN now() ELSE NULL END)
+            """), {
+                "id": device.id, "user_id": user_id, "auth": device.ed.public_key().public_bytes_raw(),
+                "enc": crypto.public_bytes(device.x.public_key()),
+                "sig": crypto.sign_encryption_key(device.ed, device.x.public_key()),
+                "revoked": device is revoked,
+            })
+        await conn.execute(text("""
+            INSERT INTO channel_memberships (channel_id, user_id, role)
+            VALUES (:channel, :user_id, 'reader')
+        """), {"channel": channel_id, "user_id": reader_user})
+    asyncio.run(console(add_fixtures))
+
+    for target in (outsider, revoked):
+        status, _ = post("/v1/keys/publish", {
+            **alice.proof("workspace"), "channel_id": channel_id, "key_id": str(uuid4()),
+            "envelopes": {str(target.id): envelope_for(target)},
+        })
+        assert status == 404
+    status, _ = post("/v1/keys/publish", {
+        **alice.proof("workspace"), "channel_id": channel_id, "key_id": str(uuid4()),
+        "envelopes": {str(alice.id): envelope_for(alice), str(outsider.id): envelope_for(outsider)},
+    })
+    assert status == 404
+    status, _ = post("/v1/keys/publish", {
+        **alice.proof("workspace"), "channel_id": channel_id, "key_id": str(uuid4()),
+        "envelopes": {str(alice.id): "!" * 120},
+    })
+    assert status == 422
+    status, _ = post("/v1/keys/publish", {
+        **reader.proof("workspace"), "channel_id": channel_id, "key_id": str(uuid4()),
+        "envelopes": {str(reader.id): envelope_for(reader)},
+    })
+    assert status == 403
     status, published = post("/v1/keys/publish", {
         **alice.proof("workspace"), "channel_id": channel_id, "key_id": str(uuid4()),
         "envelopes": {str(alice.id): envelope_for(alice), str(bob.id): envelope_for(bob)},
@@ -179,15 +236,51 @@ def main():
     assert plaintext not in base64.urlsafe_b64decode(ciphertext + "=" * (-len(ciphertext) % 4))
     assert crypto.decrypt_message(unwrapped, channel_id, 3, nonce, ciphertext) == plaintext
 
+    operation_id = uuid4()
+    aad_sequence = operation_id.int & ((1 << 64) - 1)
+    nonce, ciphertext = crypto.encrypt_message(channel_key, channel_id, aad_sequence, plaintext)
+    payload = {"channel_id": channel_id, "operation_id": str(operation_id),
+               "nonce": nonce, "ciphertext": ciphertext}
+    status, sent = post("/v1/workspace/send-message", {**alice.proof("workspace"), **payload})
+    assert status == 200 and sent["seq"] == 1
+    status, retry = post("/v1/workspace/send-message", {**alice.proof("workspace"), **payload})
+    assert status == 200 and retry == sent
+    status, _ = post("/v1/workspace/send-message", {
+        **alice.proof("workspace"), **payload, "ciphertext": crypto.b64(b"x" * 24),
+    })
+    assert status == 409
+    status, page = post("/v1/workspace/read-messages", {
+        **bob.proof("workspace"), "channel_id": channel_id,
+    })
+    assert status == 200 and len(page["messages"]) == 1
+    item = page["messages"][0]
+    assert crypto.decrypt_message(unwrapped, channel_id, aad_sequence, item["nonce"], item["ciphertext"]) == plaintext
+    status, page = post("/v1/workspace/read-messages", {
+        **bob.proof("workspace"), "channel_id": channel_id, "after": 1,
+    })
+    assert status == 200 and page["messages"] == []
+    status, _ = post("/v1/workspace/read-messages", {
+        **outsider.proof("workspace"), "channel_id": channel_id,
+    })
+    assert status == 404
+    status, _ = post("/v1/workspace/send-message", {
+        **reader.proof("workspace"), **payload, "operation_id": str(uuid4()),
+    })
+    assert status == 403
+
     async def inspect(conn):
         stored = (await conn.execute(text("SELECT key_id FROM channel_keys WHERE channel_id=:id"), {"id": channel_id})).scalar_one()
         assert str(stored) != crypto.b64(channel_key)
         envelopes = (await conn.execute(text("SELECT envelope FROM channel_key_envelopes WHERE channel_id=:id"), {"id": channel_id})).scalars().all()
         assert all(channel_key not in bytes(e) for e in envelopes)
         assert all(plaintext not in bytes(e) for e in envelopes)
+        stored_message = (await conn.execute(text(
+            "SELECT ciphertext FROM channel_messages WHERE channel_id=:id"
+        ), {"id": channel_id})).scalar_one()
+        assert plaintext not in bytes(stored_message)
     asyncio.run(console(inspect))
 
-    print("Verified signed device keys, opaque envelopes and E2E message confidentiality.")
+    print("Verified channel-key access checks, opaque envelopes and local crypto round trip.")
 
 
 if __name__ == "__main__":

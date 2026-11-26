@@ -25,6 +25,8 @@ El MCP ofrece:
 | `share_channel_key` | Crea una clave de canal y la envía envuelta solo a dispositivos autorizados. |
 | `load_channel_key` | Recibe y abre el sobre de clave de este dispositivo. |
 | `crypto_selftest` | Comprueba cifrado y descifrado locales sin enviar contenido. |
+| `send_message` | Envía un mensaje de prueba cifrado con la clave local del canal. |
+| `read_messages` | Consulta y descifra una página después de una secuencia. |
 | `relay_help` | Explica las herramientas y lo que aún no existe. |
 
 No hay que darle comandos al agente: OpenCode descubre nombres, parámetros y descripciones. Podrás decir «crea un canal para Tesis». Ninguna herramienta acepta códigos de invitación ni credenciales.
@@ -37,5 +39,7 @@ python client\relayctl.py --server https://relay.darknezz.dev devices
 ```
 
 Compara las huellas entre laptops por otro canal de confianza. Después, desde el agente usa `share_channel_key` con el ID del canal y `load_channel_key` en la otra laptop. Las claves de canal se guardan en el almacén seguro del sistema, no en archivos del proyecto.
+
+Los mensajes son experimentales: la comparación de huellas todavía no se registra ni se exige y los sobres no autentican al remitente. No usar datos sensibles. La lectura es manual; aún no existe entrega en vivo ni cola persistente para reintentos.
 
 **Para actualizar una laptop:** reinicia el proceso MCP (o reconecta `relay` en `/mcps`) para que cargue el nuevo catálogo. La identidad local no cambia.

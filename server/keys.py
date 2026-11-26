@@ -5,6 +5,7 @@ channel key from an envelope and never receives message plaintext.
 """
 
 import base64
+import binascii
 from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID, uuid4
@@ -13,7 +14,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from sqlalchemy import text
 
-from server import identity
+from server import authorization as policy, identity
 from server.workspace import _scope
 
 ENCRYPTION_DOMAIN = b"relay-encryption-key-v1"
@@ -23,12 +24,12 @@ def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")
 
 
-def _unb64(value: str) -> bytes:
-    if not isinstance(value, str) or len(value) > 128:
+def _unb64(value: str, max_length: int = 128) -> bytes:
+    if not isinstance(value, str) or len(value) > max_length:
         raise identity.Denied(422)
     try:
-        return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
-    except ValueError:
+        return base64.b64decode(value + "=" * (-len(value) % 4), altchars=b"-_", validate=True)
+    except (ValueError, binascii.Error):
         raise identity.Denied(422) from None
 
 
@@ -87,14 +88,16 @@ async def list_devices(conn, user_id):
 
 
 async def _channel_access(conn, user_id, channel_id):
-    _, role = await _scope(conn, user_id, channel_id)
-    if role is None:
+    channel, role = await _scope(conn, user_id, channel_id)
+    if not policy.allows(role, policy.ChannelKind(channel["kind"]), policy.Permission.READ_MESSAGES):
         raise identity.Denied(404)
     return role
 
 
 async def publish_channel_key(conn, user_id, sender_device_id, channel_id, key_id, envelopes):
-    await _channel_access(conn, user_id, channel_id)
+    role = await _channel_access(conn, user_id, channel_id)
+    if role not in (policy.Role.OWNER, policy.Role.ADMIN):
+        raise identity.Denied(403)
     if not isinstance(envelopes, dict) or not 1 <= len(envelopes) <= 64:
         raise identity.Denied(422)
     clean = {}
@@ -107,9 +110,18 @@ async def publish_channel_key(conn, user_id, sender_device_id, channel_id, key_i
             raise identity.Denied(422) from None
         if not isinstance(envelope, str) or not 80 <= len(envelope) <= 4096:
             raise identity.Denied(422)
-        clean[uuid] = _unb64(envelope)
+        clean[uuid] = _unb64(envelope, 4096)
         if not 80 <= len(clean[uuid]) <= 3072:
             raise identity.Denied(422)
+        recipient = await _one(
+            conn,
+            """SELECT user_id FROM devices WHERE id = :id
+               AND revoked_at IS NULL AND encryption_public_key IS NOT NULL""",
+            id=uuid,
+        )
+        if recipient is None:
+            raise identity.Denied(404)
+        await _channel_access(conn, recipient["user_id"], channel_id)
     existing = await _one(conn, "SELECT key_id FROM channel_keys WHERE channel_id = :id", id=channel_id)
     if existing:
         # Adding recipients later must reuse the same key, never replace it.

@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, UUID4
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from starlette.responses import JSONResponse
 
-from server import identity, workspace
+from server import identity, workspace, messages
 
 router = APIRouter()
 _HEADERS = {"Cache-Control": "no-store"}
@@ -44,6 +44,19 @@ class ListRequest(Authorized):
     project_id: UUID4 | None = None
     limit: _LIMIT = 50
     cursor: UUID4 | None = None
+
+
+class SendMessageRequest(Authorized):
+    channel_id: UUID4
+    operation_id: UUID4
+    nonce: str = Field(min_length=16, max_length=32)
+    ciphertext: str = Field(min_length=22, max_length=5500)
+
+
+class ReadMessagesRequest(Authorized):
+    channel_id: UUID4
+    after: int = Field(default=0, ge=0)
+    limit: int = Field(default=10, ge=1, le=10)
 
 
 def error(status: int) -> JSONResponse:
@@ -126,3 +139,13 @@ async def list_projects(body: ListRequest, request: Request):
 @router.post("/v1/workspace/list-channels")
 async def list_channels(body: ListRequest, request: Request):
     return await _run(request, body, workspace.list_channels)
+
+
+@router.post("/v1/workspace/send-message")
+async def send_message(body: SendMessageRequest, request: Request):
+    return await _run(request, body, messages.send)
+
+
+@router.post("/v1/workspace/read-messages")
+async def read_messages(body: ReadMessagesRequest, request: Request):
+    return await _run(request, body, messages.read)
