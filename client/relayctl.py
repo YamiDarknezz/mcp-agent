@@ -87,6 +87,9 @@ def main() -> int:
     invite.add_argument("--expires-in", type=int)
     redeem = sub.add_parser("invite-redeem", help="Canjea una invitación desde un prompt oculto.")
     redeem.add_argument("--code-stdin", action="store_true", help="Lee el código desde un pipe privado.")
+    redeem.add_argument("--display-name", required=True, help="Nombre de la persona invitada.")
+    redeem.add_argument("--device-label", required=True, help="Etiqueta de esta laptop.")
+    redeem.add_argument("--email", help="Correo declarado; no concede privilegios.")
     args = parser.parse_args()
     args.command = normalize_command(args.command)
 
@@ -128,7 +131,7 @@ def main() -> int:
                 print("Vence: " + str(result.get("expires_at", "desconocida")))
             else:
                 code = _code(args.code_stdin)
-                result = redeem_invite(origin, code)
+                result = redeem_invite(origin, code, args.display_name, args.device_label, args.email)
                 print("Membresía aceptada: " + str(result["channel_id"]) + " como " + str(result["role"]))
             return 0
         key = vault.load()

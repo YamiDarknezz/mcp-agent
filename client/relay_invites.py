@@ -3,9 +3,9 @@
 import re
 
 if __package__:
-    from .relay_identity import DeviceVault, IdentityError, request_json
+    from .relay_identity import DeviceVault, IdentityError, _b64, request_json
 else:
-    from relay_identity import DeviceVault, IdentityError, request_json
+    from relay_identity import DeviceVault, IdentityError, _b64, request_json
 
 CODE_PATTERN = re.compile(r"^relay_inv_[A-Za-z0-9_-]{43}$")
 ROLES = {"reader", "collaborator", "admin"}
@@ -43,11 +43,31 @@ def status(origin, channel_id):
     return result
 
 
-def redeem(origin, code):
-    """Redeem an invite from a hidden prompt. The code is never echoed or logged."""
+def redeem(origin, code, display_name, device_label, declared_email=None):
+    """Redeem an invite from a hidden prompt. The code is never echoed or logged.
+
+    The invited account and device are created by the server from the signed
+    claims; the code alone never grants a privileged role.
+    """
     if not isinstance(code, str) or not CODE_PATTERN.fullmatch(code):
         raise IdentityError("El código de invitación no tiene el formato esperado.")
-    result = _proof(origin, "/v1/invites/redeem", {"code": code})
+    for value, name in ((display_name, "display_name"), (device_label, "device_label")):
+        if not isinstance(value, str) or not 1 <= len(value.strip()) <= 100:
+            raise IdentityError(f"{name} debe tener entre 1 y 100 caracteres.")
+    key = DeviceVault(origin).load()
+    if key is None:
+        raise IdentityError("No hay una identidad local para canjear; usa activate primero.")
+    claims = {"display_name": display_name.strip(), "device_label": device_label.strip()}
+    if declared_email is not None:
+        if not isinstance(declared_email, str) or not 1 <= len(declared_email) <= 254:
+            raise IdentityError("declared_email no es válido.")
+        claims["declared_email"] = declared_email.strip()
+    result = request_json(origin, "/v1/invites/redeem", {
+        "code": code,
+        "device_id": key.device_id,
+        "public_key": _b64(key.private.public_key().public_bytes_raw()),
+        "proof": key.proof(origin, "invite_redeem", **claims),
+    }, max_bytes=8192)
     if not isinstance(result.get("channel_id"), str) or result.get("role") not in ROLES:
         raise IdentityError("Relay no confirmó la membresía tras el canje.")
     return result
