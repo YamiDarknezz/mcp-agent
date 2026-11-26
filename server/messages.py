@@ -29,12 +29,17 @@ async def send(conn, user_id, body):
                 or bytes(existing["ciphertext"]) != ciphertext):
             raise identity.Denied(409)
         return {"seq": existing["seq"], "operation_id": str(body.operation_id)}
+    current = await keys._one(conn, """
+        SELECT COALESCE(MAX(seq), 0) + 1 AS next_seq FROM channel_messages WHERE channel_id=:channel
+    """, channel=body.channel_id)
+    next_seq = current["next_seq"]
+    if body.expected_seq is not None and body.expected_seq != next_seq:
+        raise identity.Denied(409)
     row = await keys._one(conn, """
         INSERT INTO channel_messages (channel_id, seq, operation_id, device_id, nonce, ciphertext)
-        SELECT :channel, COALESCE(MAX(seq), 0) + 1, :operation, :device, :nonce, :ciphertext
-        FROM channel_messages WHERE channel_id=:channel RETURNING seq
-    """, channel=body.channel_id, operation=body.operation_id, device=body.device_id,
-        nonce=nonce, ciphertext=ciphertext)
+        VALUES (:channel, :seq, :operation, :device, :nonce, :ciphertext) RETURNING seq
+    """, channel=body.channel_id, seq=next_seq, operation=body.operation_id,
+        device=body.device_id, nonce=nonce, ciphertext=ciphertext)
     await conn.execute(text("SELECT pg_notify('relay_messages', :channel)"),
                        {"channel": str(body.channel_id)})
     return {"seq": row["seq"], "operation_id": str(body.operation_id)}

@@ -51,6 +51,7 @@ class SendMessageRequest(Authorized):
     operation_id: UUID4
     nonce: str = Field(min_length=16, max_length=32)
     ciphertext: str = Field(min_length=22, max_length=5500)
+    expected_seq: int | None = Field(default=None, ge=1)
 
 
 class ReadMessagesRequest(Authorized):
