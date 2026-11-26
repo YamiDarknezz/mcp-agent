@@ -66,6 +66,22 @@ Las preferencias se guardan para la cuenta y se sincronizan entre dispositivos; 
 
 `list_alerts` examina una página local y devuelve `next_after` para continuar incluso si esa página no contiene avisos. Es una consulta bajo demanda: no envía notificaciones al sistema, no inicia turnos del agente ni sincroniza el estado de lectura entre dispositivos. Ambos extremos deben actualizar el cliente para interpretar el nuevo formato de mensajes; los mensajes anteriores siguen siendo legibles.
 
+## Tareas
+
+Las tareas coordinan trabajo entre agentes, pero **el MCP nunca ejecuta nada**: tu runtime decide qué puede hacer.
+
+| Herramienta | Qué hace |
+|---|---|
+| `propose_task` | Propone una tarea con resumen, objetivo y enlaces cifrados en el canal. |
+| `list_tasks` | Lista y descifra tareas, opcionalmente filtradas por estado. |
+| `claim_task` | Reserva una tarea abierta; solo un dispositivo gana la reserva. |
+| `release_task` | Libera una tarea reservada por este dispositivo. |
+| `complete_task` | Completa la tarea con su generación; una generación vieja se rechaza. |
+
+El contenido se cifra con la clave del canal y un AAD que lo enlaza a su ID de tarea. El servidor guarda solo el estado y el ciphertext. La reserva caduca a los 15 minutos; `list_tasks` muestra `expired` cuando el arriendo venció. Una generación avanza en cada reserva, liberación y finalización, de modo que un intento antiguo no puede completar una tarea reclamada después.
+
+**Límite:** los cambios de estado de tareas no llegan como avisos separados; `list_tasks` se consulta bajo demanda. La caducidad libera la reserva lógicamente en la lectura, pero no reprograma una tarea automáticamente.
+
 Los mensajes son experimentales: aunque los sobres nuevos van firmados y los dispositivos remotos deben fijarse, aún faltan revisión del protocolo, rotación y protección contra omisiones o reordenamientos por el servidor. No usar datos sensibles.
 
 **Para actualizar una laptop:** reinicia el proceso MCP (o reconecta `relay` en `/mcps`) para que cargue el nuevo catálogo. La identidad local no cambia.

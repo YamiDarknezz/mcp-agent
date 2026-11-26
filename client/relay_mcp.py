@@ -14,6 +14,7 @@ from mcp.server.fastmcp import FastMCP
 if __package__:
     from .relay_live import BridgeState, run_owned_bridge
     from .relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
+    from .relay_tasks import propose as api_propose_task, list_tasks as api_list_tasks, claim as api_claim_task, release as api_release_task, complete as api_complete_task
     from .relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from .relay_workspace import (
         create_project as api_create_project,
@@ -35,6 +36,7 @@ if __package__:
 else:
     from relay_live import BridgeState, run_owned_bridge
     from relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
+    from relay_tasks import propose as api_propose_task, list_tasks as api_list_tasks, claim as api_claim_task, release as api_release_task, complete as api_complete_task
     from relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from relay_workspace import (
         create_project as api_create_project,
@@ -284,18 +286,58 @@ def create_server(origin: str) -> FastMCP:
         return await asyncio.to_thread(_safe, origin, lambda: api_alerts(origin, channel_id, after, limit))
 
     @mcp.tool()
+    async def propose_task(
+        channel_id: str, summary: str, objective: str = "", links: list[str] | None = None
+    ) -> dict:
+        """Propose a task with encrypted content. This never executes anything."""
+        return await asyncio.to_thread(
+            _safe, origin, lambda: api_propose_task(origin, channel_id, summary, objective, links),
+        )
+
+    @mcp.tool()
+    async def list_tasks(
+        channel_id: str, status: Literal["open", "claimed", "done", "cancelled"] | None = None,
+        limit: int = 30,
+    ) -> dict:
+        """List and locally decrypt tasks in a channel."""
+        if not 1 <= limit <= 100:
+            return {"error": "limit must be between 1 and 100"}
+        return await asyncio.to_thread(
+            _safe, origin, lambda: api_list_tasks(origin, channel_id, status, limit),
+        )
+
+    @mcp.tool()
+    async def claim_task(channel_id: str, task_id: str) -> dict:
+        """Reserve an open task. Accepting here grants no permission to run anything."""
+        return await asyncio.to_thread(_safe, origin, lambda: api_claim_task(origin, channel_id, task_id))
+
+    @mcp.tool()
+    async def release_task(channel_id: str, task_id: str) -> dict:
+        """Release a task this device claimed, allowing others to take it."""
+        return await asyncio.to_thread(_safe, origin, lambda: api_release_task(origin, channel_id, task_id))
+
+    @mcp.tool()
+    async def complete_task(channel_id: str, task_id: str, generation: int) -> dict:
+        """Complete a claimed task with its generation; a stale generation is rejected."""
+        return await asyncio.to_thread(
+            _safe, origin, lambda: api_complete_task(origin, channel_id, task_id, generation),
+        )
+
+    @mcp.tool()
     async def relay_help() -> dict:
         """Explain how to create projects, channels and shared keys, and what is not implemented yet."""
         return {
             "tools": [
                 "status", "create_project", "list_projects", "create_subchannel", "set_subscription", "list_subscriptions",
                 "setup_encryption", "encryption_status", "share_channel_key",
-                "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "read_inbox", "my_identity", "list_alerts", "relay_help",
+                "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "read_inbox", "my_identity", "list_alerts",
+                "propose_task", "list_tasks", "claim_task", "release_task", "complete_task", "relay_help",
             ],
             "project": "The root is a container with no chat. Create it with a name; Relay creates 'main' automatically.",
             "subchannel": "Create under a project ID or a work subchannel ID. Use access='restricted' to cut inherited access.",
             "encryption": "Run setup_encryption once, compare fingerprints with the other laptop, then share_channel_key and load_channel_key per channel.",
-            "not_yet": ["push notifications", "cross-device alert read state", "channel invitations", "file sharing", "task handoff"],
+            "tasks": "Propose, claim and complete tasks. The MCP coordinates only; your runtime decides what it can execute.",
+            "not_yet": ["push notifications", "cross-device alert read state", "channel invitations", "file sharing"],
             "enrollment": "Ask the human to use relayctl in a private terminal; never paste a code into a tool call.",
         }
 

@@ -74,7 +74,7 @@ class WorkspaceBodyLimit:
 
     async def __call__(self, scope, receive, send):
         path = scope["path"] if scope["type"] == "http" else ""
-        if scope["type"] != "http" or scope["method"] != "POST" or not path.startswith(("/v1/workspace/", "/v1/keys/")):
+        if scope["type"] != "http" or scope["method"] != "POST" or not path.startswith(("/v1/workspace/", "/v1/keys/", "/v1/tasks/")):
             await self.app(scope, receive, send)
             return
         # Channel-key envelopes are intentionally larger than ordinary requests.

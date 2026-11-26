@@ -13,7 +13,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -316,6 +316,70 @@ def main():
     })
     assert status == 403
 
+    # --- Tasks: encrypted content, generation-based reservations, stale completion. ---
+    task_id = str(uuid4())
+    task_op = str(uuid4())
+    task_raw = b"{\"summary\":\"Preparar informe\",\"objective\":\"\", \"links\":[]}"
+    task_nonce, task_ciphertext = crypto.encrypt_task(channel_key, channel_id, task_id, task_raw)
+    status, proposed = post("/v1/tasks/propose", {
+        **alice.proof("workspace"), "channel_id": channel_id, "task_id": task_id,
+        "operation_id": task_op, "nonce": task_nonce, "ciphertext": task_ciphertext,
+    })
+    assert status == 200 and proposed["task_id"] == task_id
+    status, retry_propose = post("/v1/tasks/propose", {
+        **alice.proof("workspace"), "channel_id": channel_id, "task_id": task_id,
+        "operation_id": task_op, "nonce": task_nonce, "ciphertext": task_ciphertext,
+    })
+    assert status == 200 and retry_propose == proposed
+    status, task_page = post("/v1/tasks/list", {**bob.proof("workspace"), "channel_id": channel_id})
+    assert status == 200 and len(task_page["tasks"]) == 1
+    listed = task_page["tasks"][0]
+    assert crypto.decrypt_task(channel_key, channel_id, task_id, listed["nonce"], listed["ciphertext"]) == task_raw
+    assert listed["status"] == "open" and listed["generation"] == 0
+
+    status, _ = post("/v1/tasks/propose", {
+        **outsider.proof("workspace"), "channel_id": channel_id, "task_id": str(uuid4()),
+        "operation_id": str(uuid4()), "nonce": task_nonce, "ciphertext": task_ciphertext,
+    })
+    assert status == 404
+    status, _ = post("/v1/tasks/list", {**reader.proof("workspace"), "channel_id": channel_id})
+    assert status == 200  # reader may read tasks
+    status, _ = post("/v1/tasks/claim", {
+        **reader.proof("workspace"), "channel_id": channel_id, "task_id": task_id,
+    })
+    assert status == 403
+
+    status, claim_bob = post("/v1/tasks/claim", {
+        **bob.proof("workspace"), "channel_id": channel_id, "task_id": task_id,
+    })
+    assert status == 200 and claim_bob["generation"] == 1
+    status, _ = post("/v1/tasks/claim", {
+        **alice.proof("workspace"), "channel_id": channel_id, "task_id": task_id,
+    })
+    assert status == 409  # one winner
+    # Stale completion must fail after the lease is released and generation advances.
+    status, _ = post("/v1/tasks/release", {
+        **bob.proof("workspace"), "channel_id": channel_id, "task_id": task_id,
+    })
+    assert status == 200
+    status, claim_alice = post("/v1/tasks/claim", {
+        **alice.proof("workspace"), "channel_id": channel_id, "task_id": task_id,
+    })
+    assert status == 200 and claim_alice["generation"] == 3
+    status, _ = post("/v1/tasks/complete", {
+        **bob.proof("workspace"), "channel_id": channel_id, "task_id": task_id, "generation": 1,
+    })
+    assert status == 409
+    status, done = post("/v1/tasks/complete", {
+        **alice.proof("workspace"), "channel_id": channel_id, "task_id": task_id,
+        "generation": claim_alice["generation"],
+    })
+    assert status == 200 and done["generation"] == 4
+    status, final_page = post("/v1/tasks/list", {
+        **alice.proof("workspace"), "channel_id": channel_id, "status": "done",
+    })
+    assert status == 200 and any(t["task_id"] == task_id for t in final_page["tasks"])
+
     async def inspect(conn):
         stored = (await conn.execute(text("SELECT key_id FROM channel_keys WHERE channel_id=:id"), {"id": channel_id})).scalar_one()
         assert str(stored) != crypto.b64(channel_key)
@@ -326,6 +390,10 @@ def main():
             "SELECT ciphertext FROM channel_messages WHERE channel_id=:id"
         ), {"id": channel_id})).scalar_one()
         assert plaintext not in bytes(stored_message)
+        stored_task = (await conn.execute(text(
+            "SELECT ciphertext FROM tasks WHERE id=:id"
+        ), {"id": UUID(task_id)})).scalar_one()
+        assert b"Preparar informe" not in bytes(stored_task)
     asyncio.run(console(inspect))
 
     async def live_smoke():
@@ -351,7 +419,7 @@ def main():
                 assert error.rcvd and error.rcvd.code == 1008
     asyncio.run(live_smoke())
 
-    print("Verified key access, encrypted messages, WebSocket notifications and device revocation.")
+    print("Verified key access, messages, tasks, WebSocket notifications and revocation.")
 
 
 if __name__ == "__main__":

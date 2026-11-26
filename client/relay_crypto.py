@@ -32,6 +32,7 @@ WRAP_DOMAIN = b"relay-wrap-v1"
 MESSAGE_DOMAIN = b"relay-msg-v1"
 ENVELOPE_SIGNATURE_DOMAIN = b"relay-signed-envelope-v2"
 DEVICE_FINGERPRINT_DOMAIN = b"relay-device-fingerprint-v2"
+TASK_DOMAIN = b"relay-task-v1"
 KEY_SIZE = 32
 NONCE_SIZE = 12
 
@@ -213,6 +214,28 @@ def decrypt_message(
         )
     except (InvalidTag, ValueError):
         raise ValueError("Message failed authenticated decryption.") from None
+
+
+def encrypt_task(
+    channel_key: bytes, channel_id: str, task_id: str, plaintext: bytes
+) -> tuple[str, str]:
+    """Encrypt task content; AAD binds it to its channel and task ID."""
+    if len(channel_key) != KEY_SIZE:
+        raise ValueError("Invalid channel key.")
+    nonce = os.urandom(NONCE_SIZE)
+    aad = _aad(TASK_DOMAIN, channel_id, task_id)
+    ciphertext = AESGCM(channel_key).encrypt(nonce, plaintext, aad)
+    return b64(nonce), b64(ciphertext)
+
+
+def decrypt_task(
+    channel_key: bytes, channel_id: str, task_id: str, nonce: str, ciphertext: str
+) -> bytes:
+    aad = _aad(TASK_DOMAIN, channel_id, task_id)
+    try:
+        return AESGCM(channel_key).decrypt(unb64(nonce, NONCE_SIZE), unb64(ciphertext), aad)
+    except (InvalidTag, ValueError):
+        raise ValueError("Task failed authenticated decryption.") from None
 
 
 def verify_channel_key(channel_key: bytes) -> bool:
