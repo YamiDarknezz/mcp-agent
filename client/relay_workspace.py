@@ -3,9 +3,9 @@
 from typing import Any, TypedDict
 
 if __package__:
-    from .relay_identity import DeviceVault, IdentityError, request_json
+    from .relay_identity import DeviceVault, IdentityError, identify, request_json
 else:
-    from relay_identity import DeviceVault, IdentityError, request_json
+    from relay_identity import DeviceVault, IdentityError, identify, request_json
 
 
 class ChannelCard(TypedDict):
@@ -68,6 +68,39 @@ def list_projects(origin: str, limit: int = 50, cursor: str | None = None) -> Pa
     if cursor:
         payload["cursor"] = cursor
     return _call(origin, "/v1/workspace/list-projects", payload)
+
+
+def list_channels(
+    origin: str, project_id: str | None = None, limit: int = 50, cursor: str | None = None
+) -> Page:
+    """List channels visible to this account, optionally under one project."""
+    payload: dict[str, Any] = {"limit": limit}
+    if project_id:
+        payload["project_id"] = project_id
+    if cursor:
+        payload["cursor"] = cursor
+    return _call(origin, "/v1/workspace/list-channels", payload)
+
+
+def directory(origin: str) -> dict[str, Any]:
+    """Return mentionable account and device IDs without any key material."""
+    key = DeviceVault(origin).load()
+    if key is None:
+        raise IdentityError("Esta laptop no está registrada en Relay.")
+    identity = identify(origin, key)
+    devices = _call(origin, "/v1/devices/list", {})
+    return {
+        "account_id": identity["account_id"],
+        "devices": [
+            {
+                "id": device["id"],
+                "label": device["label"],
+                "encryption_fingerprint": device.get("fingerprint"),
+            }
+            for device in devices["devices"]
+        ],
+        "note": "Devices here belong to the same account; mentions use account_id.",
+    }
 
 
 def set_subscription(origin: str, channel_id: str, mode: str | None) -> dict[str, Any]:

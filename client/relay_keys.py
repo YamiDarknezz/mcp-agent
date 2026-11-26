@@ -217,6 +217,23 @@ def has_local_key(origin: str, channel_id: str) -> bool:
     return ChannelKeyStore(origin).load(channel_id) is not None
 
 
+def ensure(origin: str, channel_id: str) -> dict[str, Any]:
+    """Create or reuse a channel key and load it here, without rotating existing keys."""
+    if has_local_key(origin, channel_id):
+        try:
+            result = load(origin, channel_id)
+        except IdentityError:
+            return {"status": "already_local", "channel_id": channel_id, "key_id": None}
+        return {"status": "already_local", **result}
+    shared = share(origin, channel_id)
+    loaded = load(origin, channel_id)
+    return {
+        "status": "created",
+        "recipients": shared.get("recipients", []),
+        **loaded,
+    }
+
+
 def encrypt(origin: str, channel_id: str, seq: int, plaintext: bytes) -> dict[str, str]:
     key = ChannelKeyStore(origin).load(channel_id)
     if key is None:
