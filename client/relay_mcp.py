@@ -11,7 +11,7 @@ from urllib.request import Request
 from mcp.server.fastmcp import FastMCP
 
 if __package__:
-    from .relay_messages import send as api_send_message, read as api_read_messages
+    from .relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending
     from .relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from .relay_workspace import (
         create_project as api_create_project,
@@ -28,7 +28,7 @@ if __package__:
         share as api_share_key,
     )
 else:
-    from relay_messages import send as api_send_message, read as api_read_messages
+    from relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending
     from relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from relay_workspace import (
         create_project as api_create_project,
@@ -205,8 +205,13 @@ def create_server(origin: str) -> FastMCP:
 
     @mcp.tool()
     async def send_message(channel_id: str, content: str) -> dict:
-        """Send a test message encrypted locally to a channel with a local key."""
+        """Queue and send a test message encrypted locally; pending messages can be retried."""
         return await asyncio.to_thread(_safe, origin, lambda: api_send_message(origin, channel_id, content))
+
+    @mcp.tool()
+    async def retry_messages() -> dict:
+        """Retry encrypted messages retained on this device, preserving their operation IDs."""
+        return await asyncio.to_thread(_safe, origin, lambda: api_retry_pending(origin))
 
     @mcp.tool()
     async def read_messages(channel_id: str, after: int = 0, limit: int = 10) -> dict:
@@ -222,12 +227,12 @@ def create_server(origin: str) -> FastMCP:
             "tools": [
                 "status", "create_project", "list_projects", "create_subchannel",
                 "setup_encryption", "encryption_status", "share_channel_key",
-                "load_channel_key", "crypto_selftest", "send_message", "read_messages", "relay_help",
+                "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "relay_help",
             ],
             "project": "The root is a container with no chat. Create it with a name; Relay creates 'main' automatically.",
             "subchannel": "Create under a project ID or a work subchannel ID. Use access='restricted' to cut inherited access.",
             "encryption": "Run setup_encryption once, compare fingerprints with the other laptop, then share_channel_key and load_channel_key per channel.",
-            "not_yet": ["live delivery", "durable retries", "channel invitations", "file sharing", "task handoff"],
+            "not_yet": ["live delivery", "automatic retries", "channel invitations", "file sharing", "task handoff"],
             "enrollment": "Ask the human to use relayctl in a private terminal; never paste a code into a tool call.",
         }
 
