@@ -112,20 +112,27 @@ async def publish_channel_key(conn, user_id, sender_device_id, channel_id, key_i
             raise identity.Denied(422)
     existing = await _one(conn, "SELECT key_id FROM channel_keys WHERE channel_id = :id", id=channel_id)
     if existing:
-        raise identity.Denied(409)
-    await conn.execute(
-        text("""INSERT INTO channel_keys (channel_id, key_id, created_by)
-                VALUES (:channel, :key_id, :sender)"""),
-        {"channel": channel_id, "key_id": key_id, "sender": sender_device_id},
-    )
+        # Adding recipients later must reuse the same key, never replace it.
+        if existing["key_id"] != key_id:
+            raise identity.Denied(409)
+    else:
+        await conn.execute(
+            text("""INSERT INTO channel_keys (channel_id, key_id, created_by)
+                    VALUES (:channel, :key_id, :sender)"""),
+            {"channel": channel_id, "key_id": key_id, "sender": sender_device_id},
+        )
     for device_id, envelope in clean.items():
         await conn.execute(
             text("""INSERT INTO channel_key_envelopes
                     (channel_id, recipient_device_id, sender_device_id, envelope)
-                    VALUES (:channel, :recipient, :sender, :envelope)"""),
+                    VALUES (:channel, :recipient, :sender, :envelope)
+                    ON CONFLICT (channel_id, recipient_device_id) DO NOTHING"""),
             {"channel": channel_id, "recipient": device_id, "sender": sender_device_id, "envelope": envelope},
         )
-    return {"channel_id": str(channel_id), "key_id": str(key_id), "recipients": len(clean)}
+    total = await _one(
+        conn, "SELECT count(*) AS n FROM channel_key_envelopes WHERE channel_id = :id", id=channel_id,
+    )
+    return {"channel_id": str(channel_id), "key_id": str(key_id), "recipients": total["n"]}
 
 
 async def fetch_channel_key(conn, user_id, device_id, channel_id):

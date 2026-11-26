@@ -169,10 +169,12 @@ def create_server(origin: str) -> FastMCP:
         return await asyncio.to_thread(_safe, origin, action)
 
     @mcp.tool()
-    async def share_channel_key(channel_id: str, device_ids: list[str] | None = None) -> dict:
-        """Create a channel key and wrap it only for authorized devices. The server cannot read it."""
+    async def share_channel_key(
+        channel_id: str, device_ids: list[str] | None = None, key_id: str | None = None
+    ) -> dict:
+        """Wrap a channel key for devices. Pass key_id to add recipients without rotating."""
         return await asyncio.to_thread(
-            _safe, origin, lambda: api_share_key(origin, channel_id, device_ids),
+            _safe, origin, lambda: api_share_key(origin, channel_id, device_ids, key_id),
         )
 
     @mcp.tool()

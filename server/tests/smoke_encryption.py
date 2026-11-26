@@ -153,11 +153,18 @@ def main():
         "envelopes": {str(alice.id): envelope_for(alice), str(bob.id): envelope_for(bob)},
     })
     assert status == 200 and published["recipients"] == 2
+    # A different key must never replace an existing channel key.
     status, _ = post("/v1/keys/publish", {
-        **bob.proof("workspace"), "channel_id": channel_id, "key_id": str(uuid4()),
+        **alice.proof("workspace"), "channel_id": channel_id, "key_id": str(uuid4()),
         "envelopes": {str(bob.id): envelope_for(bob)},
     })
     assert status == 409
+    # Adding a recipient later must reuse the same key without changing it.
+    status, extended = post("/v1/keys/publish", {
+        **alice.proof("workspace"), "channel_id": channel_id, "key_id": published["key_id"],
+        "envelopes": {str(bob.id): envelope_for(bob)},
+    })
+    assert status == 200 and extended["key_id"] == published["key_id"] and extended["recipients"] == 2
 
     status, fetched = post("/v1/keys/fetch", {**bob.proof("workspace"), "channel_id": channel_id})
     assert status == 200

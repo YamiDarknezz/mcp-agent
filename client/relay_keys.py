@@ -76,8 +76,10 @@ def _verified_public(device: dict[str, Any], origin: str) -> bytes:
     return crypto.public_bytes(xpub)
 
 
-def share(origin: str, channel_id: str, recipients: list[str] | None = None) -> dict[str, Any]:
-    """Create a channel key and wrap it for each authorized device."""
+def share(
+    origin: str, channel_id: str, recipients: list[str] | None = None, key_id: str | None = None
+) -> dict[str, Any]:
+    """Create or extend a channel key, wrapping it for each authorized device."""
     key = DeviceVault(origin).load()
     if key is None:
         raise IdentityError("Esta laptop no está registrada en Relay.")
@@ -85,7 +87,13 @@ def share(origin: str, channel_id: str, recipients: list[str] | None = None) -> 
     mine = next((d for d in devices if d["id"] == key.device_id), None)
     if mine is None or not mine.get("encryption_key"):
         raise IdentityError("Ejecuta setup_encryption antes de compartir una clave de canal.")
-    channel_key = crypto.new_channel_key()
+    store = ChannelKeyStore(origin)
+    channel_key = store.load(channel_id) if key_id else None
+    if key_id and channel_key is None:
+        raise IdentityError("No tienes la clave de este canal; ejecuta load_channel_key primero.")
+    if channel_key is None:
+        channel_key = crypto.new_channel_key()
+        key_id = str(uuid4())
     envelopes = {}
     targets = recipients or [d["id"] for d in devices if d.get("encryption_key")]
     selected = [d for d in devices if d["id"] in targets and d.get("encryption_key")]
@@ -98,10 +106,10 @@ def share(origin: str, channel_id: str, recipients: list[str] | None = None) -> 
             channel_id, key.device_id, device["id"],
         )
     body = _signed(origin, key, {
-        "channel_id": channel_id, "key_id": str(uuid4()), "envelopes": envelopes,
+        "channel_id": channel_id, "key_id": key_id, "envelopes": envelopes,
     })
     result = request_json(origin, "/v1/keys/publish", body)
-    ChannelKeyStore(origin).save(channel_id, channel_key)
+    store.save(channel_id, channel_key)
     return {**result, "recipients": sorted(envelopes)}
 
 
