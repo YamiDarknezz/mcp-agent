@@ -9,11 +9,13 @@ if __package__:
     from . import relay_announcement_format as announcement_format
     from . import relay_messages
     from .relay_identity import DeviceVault, IdentityError
+    from .relay_version import CLIENT_VERSION, warning as version_warning
     from .relay_workspace import list_projects, _call
 else:
     import relay_announcement_format as announcement_format
     import relay_messages
     from relay_identity import DeviceVault, IdentityError
+    from relay_version import CLIENT_VERSION, warning as version_warning
     from relay_workspace import list_projects, _call
 
 
@@ -30,7 +32,7 @@ def main_channel(origin: str) -> str:
 
 def announce(origin: str, announced_channel_id: str, note: str = "", via: str | None = None) -> dict:
     try:
-        content = announcement_format.encode(announced_channel_id, note)
+        content = announcement_format.encode_with_version(announced_channel_id, note)
     except (ValueError, TypeError):
         raise IdentityError("Anuncio inválido.") from None
     transport = via or main_channel(origin)
@@ -45,6 +47,7 @@ def list_announcements(origin: str, after: int = 0, limit: int = 10, via: str | 
     transport = via or main_channel(origin)
     inbox = relay_messages.read_inbox(origin, transport, after, limit)
     seen = {}
+    warnings = []
     for message in inbox["messages"]:
         try:
             parsed = announcement_format.decode(message["content"])
@@ -55,14 +58,23 @@ def list_announcements(origin: str, after: int = 0, limit: int = 10, via: str | 
         key = (message["device_id"], parsed["channel_id"])
         current = seen.get(key)
         if current is None or message["seq"] > current["seq"]:
+            remote = parsed.get("client_version")
             seen[key] = {
                 "seq": message["seq"],
                 "operation_id": message["operation_id"],
                 "device_id": message["device_id"],
                 "channel_id": parsed["channel_id"],
                 "note": parsed["note"],
+                "client_version": remote,
+                "legacy": remote is None,
             }
+        if remote:
+            notice = version_warning(remote)
+            if notice and notice not in warnings:
+                warnings.append(notice)
     return {
         "announcements": sorted(seen.values(), key=lambda item: item["seq"]),
         "cursor": inbox["cursor"],
+        "client_version": CLIENT_VERSION,
+        "version_warning": warnings[0] if warnings else None,
     }

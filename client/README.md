@@ -16,7 +16,8 @@ El MCP ofrece:
 
 | Herramienta | Qué hace |
 |---|---|
-| `status` | Salud del servicio y si la laptop está registrada. |
+| `status` | Salud del servicio, versión del cliente y si la laptop está registrada. |
+| `version()` | Versión del cliente y del protocolo para detectar extremos antiguos. |
 | `create_project(name, slug?)` | Crea el proyecto y su `main` en una sola operación. |
 | `list_projects(limit?, cursor?)` | Lista los proyectos visibles para tu cuenta. |
 | `list_channels(project_id?, limit?, cursor?)` | Lista los canales visibles, opcionalmente de un proyecto. Ver no concede acceso. |
