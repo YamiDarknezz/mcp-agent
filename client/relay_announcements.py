@@ -55,14 +55,23 @@ def list_announcements(origin: str, after: int = 0, limit: int = 10, via: str | 
         key = (message["device_id"], parsed["channel_id"])
         current = seen.get(key)
         if current is None or message["seq"] > current["seq"]:
+            version = parsed.get("version", 1)
+            warning = None
+            if version == 1:
+                warning = "legacy"
+            elif version > announcement_format.CLIENT_VERSION:
+                warning = "remote_newer"
             seen[key] = {
                 "seq": message["seq"],
                 "operation_id": message["operation_id"],
                 "device_id": message["device_id"],
                 "channel_id": parsed["channel_id"],
                 "note": parsed["note"],
+                "version": version,
+                "warning": warning,
             }
     return {
         "announcements": sorted(seen.values(), key=lambda item: item["seq"]),
         "cursor": inbox["cursor"],
+        "client_version": announcement_format.CLIENT_VERSION,
     }

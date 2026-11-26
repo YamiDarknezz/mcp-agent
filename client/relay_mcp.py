@@ -15,6 +15,7 @@ if __package__:
     from .relay_live import BridgeState, run_owned_bridge
     from .relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
     from .relay_announcements import announce as api_announce_channel, list_announcements as api_list_announcements
+    from .relay_announcement_format import CLIENT_VERSION as ANNOUNCEMENT_VERSION
     from .relay_tasks import propose as api_propose_task, list_tasks as api_list_tasks, claim as api_claim_task, release as api_release_task, complete as api_complete_task
     from .relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from .relay_workspace import (
@@ -43,6 +44,7 @@ else:
     from relay_live import BridgeState, run_owned_bridge
     from relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
     from relay_announcements import announce as api_announce_channel, list_announcements as api_list_announcements
+    from relay_announcement_format import CLIENT_VERSION as ANNOUNCEMENT_VERSION
     from relay_tasks import propose as api_propose_task, list_tasks as api_list_tasks, claim as api_claim_task, release as api_release_task, complete as api_complete_task
     from relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from relay_workspace import (
@@ -194,6 +196,7 @@ def create_server(origin: str) -> FastMCP:
         return {
             "origin": origin, "healthy": healthy, "ready": ready,
             "enrollment": enrollment, "is_operator": operator, "bridge": bridge_state.status,
+            "client_version": ANNOUNCEMENT_VERSION,
             "channels": _channel_details(origin, bridge_state)["channels"],
         }
 
@@ -348,6 +351,11 @@ def create_server(origin: str) -> FastMCP:
         return await asyncio.to_thread(_safe, origin, lambda: _channel_details(origin, bridge_state, channel_id))
 
     @mcp.tool()
+    async def version() -> dict:
+        """Report client and announcement format versions for compatibility checks."""
+        return {"client_version": ANNOUNCEMENT_VERSION, "announcement_version": ANNOUNCEMENT_VERSION}
+
+    @mcp.tool()
     async def announce_channel(channel_id: str, note: str = "") -> dict:
         """Inform another laptop about a channel via encrypted main. Does not grant access or follow it."""
         return await asyncio.to_thread(_safe, origin, lambda: api_announce_channel(origin, channel_id, note))
@@ -422,7 +430,7 @@ def create_server(origin: str) -> FastMCP:
         """Explain how to create projects, channels and shared keys, and what is not implemented yet."""
         return {
             "tools": [
-                "status", "create_project", "list_projects", "list_channels", "directory",
+                "status", "version", "create_project", "list_projects", "list_channels", "directory",
                 "create_subchannel", "set_subscription", "list_subscriptions",
                 "setup_encryption", "encryption_status", "share_channel_key",
                 "load_channel_key", "ensure_channel_key", "channel_status", "crypto_selftest",
