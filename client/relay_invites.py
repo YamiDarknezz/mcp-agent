@@ -3,8 +3,10 @@
 import re
 
 if __package__:
+    from . import relay_crypto as crypto
     from .relay_identity import DeviceVault, IdentityError, request_json
 else:
+    import relay_crypto as crypto
     from relay_identity import DeviceVault, IdentityError, request_json
 
 CODE_PATTERN = re.compile(r"^relay_inv_[A-Za-z0-9_-]{43}$")
@@ -43,11 +45,27 @@ def status(origin, channel_id):
     return result
 
 
-def redeem(origin, code):
-    """Redeem an invite from a hidden prompt. The code is never echoed or logged."""
+def redeem(origin, code, name, label, email=None):
+    """Redeem an invite for a NEW device/account. The code is never echoed or logged."""
     if not isinstance(code, str) or not CODE_PATTERN.fullmatch(code):
         raise IdentityError("El código de invitación no tiene el formato esperado.")
-    result = _proof(origin, "/v1/invites/redeem", {"code": code})
+    for field, value in (("nombre", name), ("etiqueta", label)):
+        if not isinstance(value, str) or not value.strip():
+            raise IdentityError(f"Falta {field} para crear la cuenta del invitado.")
+    if email is not None and not isinstance(email, str):
+        raise IdentityError("El correo declarado debe ser texto.")
+    key = DeviceVault(origin).load_or_create()
+    public_key = crypto.b64(key.private.public_key().public_bytes_raw())
+    claims = {"display_name": name.strip(), "device_label": label.strip()}
+    if email and email.strip():
+        claims["declared_email"] = email.strip()
+    body = {
+        "code": code,
+        "device_id": key.device_id,
+        "public_key": public_key,
+        "proof": key.proof(origin, "invite_redeem", **claims),
+    }
+    result = request_json(origin, "/v1/invites/redeem", body, max_bytes=8192)
     if not isinstance(result.get("channel_id"), str) or result.get("role") not in ROLES:
         raise IdentityError("Relay no confirmó la membresía tras el canje.")
     return result
