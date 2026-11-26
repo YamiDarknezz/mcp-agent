@@ -49,6 +49,14 @@ def _register(args, origin, vault):
         return 0
 
 
+COMMAND_ALIASES = {"pair": "pair-start", "join": "pair-join"}
+
+
+def normalize_command(command: str) -> str:
+    """Map legacy command names to their canonical, self-describing forms."""
+    return COMMAND_ALIASES.get(command, command)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Relay device enrollment.")
     parser.add_argument("--server", default=os.getenv("MCP_AGENT_SERVER_URL"))
@@ -56,18 +64,23 @@ def main() -> int:
     activate = sub.add_parser("activate")
     activate.add_argument("--name", required=True)
     activate.add_argument("--email")
-    join = sub.add_parser("join")
+    join = sub.add_parser(
+        "pair-join", aliases=["join"], help="Consume un código de emparejamiento en esta laptop."
+    )
     for command in (activate, join):
         command.add_argument("--label", required=True)
         command.add_argument("--code-stdin", action="store_true", help="Read from a private pipe, not a command argument.")
     sub.add_parser("whoami")
-    sub.add_parser("pair")
+    sub.add_parser(
+        "pair-start", aliases=["pair"], help="Genera un código para emparejar otra laptop tuya."
+    )
     sub.add_parser("setup-encryption", help="Publica la clave de cifrado firmada de esta laptop.")
     sub.add_parser("devices", help="Muestra huellas de los dispositivos para comparar fuera de banda.")
     trust = sub.add_parser("trust-device", help="Fija una huella comprobada fuera de Relay.")
     trust.add_argument("device_id")
     trust.add_argument("fingerprint", help="Huella completa de identidad de 64 caracteres.")
     args = parser.parse_args()
+    args.command = normalize_command(args.command)
 
     try:
         origin = server_origin(args.server)
@@ -100,7 +113,7 @@ def main() -> int:
         key = vault.load()
         if not key:
             raise IdentityError("Esta laptop no tiene una identidad de Relay.")
-        if args.command == "pair":
+        if args.command == "pair-start":
             if not sys.stdout.isatty():
                 raise IdentityError("Genera el código desde una terminal privada, fuera del agente.")
             print(issue_pair_code(origin, key))

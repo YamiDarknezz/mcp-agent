@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp-agent-relay"
+version = "0.1.0"
+description = "Cliente local del MCP Relay: identidad de dispositivo, herramientas y puente en vivo."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "cryptography==50.0.2",
+  "keyring==25.7.0",
+  "mcp==1.30.0",
+  "PyJWT==2.15.1",
+  "websockets==16.0",
+]
+
+[project.scripts]
+relayctl = "client.relayctl:main"
+relay-mcp = "client.relay_mcp:main"
+
+[tool.setuptools]
+packages = ["client"]

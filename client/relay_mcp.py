@@ -441,7 +441,7 @@ def create_server(origin: str) -> FastMCP:
     return mcp
 
 
-if __name__ == "__main__":
+def main() -> None:
     try:
         origin = server_origin(os.getenv("MCP_AGENT_SERVER_URL"))
     except ValueError:
@@ -449,3 +449,7 @@ if __name__ == "__main__":
             "Set MCP_AGENT_SERVER_URL to an HTTPS origin without credentials."
         ) from None
     create_server(origin).run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()
