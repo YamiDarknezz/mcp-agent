@@ -10,9 +10,11 @@ import warnings
 if __package__:
     from .relay_identity import DeviceVault, IdentityError, enroll, enrollment_lock, identify, issue_pair_code, server_origin
     from .relay_keys import list_devices, public_device_fingerprint, setup as setup_encryption, trust_device
+    from .relay_invites import issue as issue_invite, redeem as redeem_invite
 else:
     from relay_identity import DeviceVault, IdentityError, enroll, enrollment_lock, identify, issue_pair_code, server_origin
     from relay_keys import list_devices, public_device_fingerprint, setup as setup_encryption, trust_device
+    from relay_invites import issue as issue_invite, redeem as redeem_invite
 
 
 def _code(pipe: bool) -> str:
@@ -79,6 +81,12 @@ def main() -> int:
     trust = sub.add_parser("trust-device", help="Fija una huella comprobada fuera de Relay.")
     trust.add_argument("device_id")
     trust.add_argument("fingerprint", help="Huella completa de identidad de 64 caracteres.")
+    invite = sub.add_parser("invite-issue", help="Emite una invitación de un solo uso para un subcanal.")
+    invite.add_argument("--channel", required=True)
+    invite.add_argument("--role", default="reader", choices=["reader", "collaborator", "admin"])
+    invite.add_argument("--expires-in", type=int)
+    redeem = sub.add_parser("invite-redeem", help="Canjea una invitación desde un prompt oculto.")
+    redeem.add_argument("--code-stdin", action="store_true", help="Lee el código desde un pipe privado.")
     args = parser.parse_args()
     args.command = normalize_command(args.command)
 
@@ -109,6 +117,19 @@ def main() -> int:
                 raise IdentityError("Confirma la huella desde una terminal humana de confianza.")
             trust_device(origin, args.device_id, args.fingerprint)
             print("Huella fijada para este dispositivo.")
+            return 0
+        if args.command in {"invite-issue", "invite-redeem"}:
+            if not sys.stdin.isatty() or not sys.stdout.isatty():
+                raise IdentityError("Las invitaciones se emiten y canjean en una terminal privada, fuera del agente.")
+            if args.command == "invite-issue":
+                result = issue_invite(origin, args.channel, args.role, args.expires_in)
+                print("Código de invitación (un solo uso, no lo compartas por el agente):")
+                print(result["code"])
+                print("Vence: " + str(result.get("expires_at", "desconocida")))
+            else:
+                code = _code(args.code_stdin)
+                result = redeem_invite(origin, code)
+                print("Membresía aceptada: " + str(result["channel_id"]) + " como " + str(result["role"]))
             return 0
         key = vault.load()
         if not key:
