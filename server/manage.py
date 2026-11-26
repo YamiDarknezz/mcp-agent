@@ -7,7 +7,7 @@ from uuid import UUID
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from server import identity, settings
+from server import identity, keys, settings
 
 
 async def _operator_action(args):
@@ -17,7 +17,9 @@ async def _operator_action(args):
             if args.command == "issue-bootstrap":
                 issued = await identity.issue_bootstrap(conn, settings.enrollment_code_ttl())
             else:
+                affected = await keys.affected_channels(conn, args.device_id)
                 await identity.revoke_device(conn, args.device_id)
+                await keys.mark_rotation_required(conn, affected)
         if args.command == "issue-bootstrap":
             print(issued["code"], flush=True)
         else:

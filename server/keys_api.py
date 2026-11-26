@@ -43,6 +43,20 @@ class FetchRequest(Authorized):
     channel_id: UUID4
 
 
+class RotateRequest(Authorized):
+    channel_id: UUID4
+    key_id: UUID4
+    replaces_key_id: UUID4
+    envelopes: dict[str, _ENVELOPE] = Field(min_length=1, max_length=64)
+
+
+async def _rotate(conn, user_id, body):
+    return await keys.rotate_channel_key(
+        conn, user_id, body.device_id, body.channel_id,
+        body.key_id, body.replaces_key_id, body.envelopes,
+    )
+
+
 def error(status: int) -> JSONResponse:
     return JSONResponse({"status": "rejected"}, status_code=status, headers=_HEADERS)
 
@@ -84,6 +98,10 @@ async def _fetch(conn, user_id, body):
     return await keys.fetch_channel_key(conn, user_id, body.device_id, body.channel_id)
 
 
+async def _pending(conn, user_id, _body):
+    return {"channels": await keys.pending_rotations(conn, user_id)}
+
+
 @router.post("/v1/devices/encryption-key")
 async def device_key(body: DeviceKeyRequest, request: Request):
     return await _run(request, body, _device_key)
@@ -102,3 +120,13 @@ async def publish(body: PublishRequest, request: Request):
 @router.post("/v1/keys/fetch")
 async def fetch(body: FetchRequest, request: Request):
     return await _run(request, body, _fetch)
+
+
+@router.post("/v1/keys/rotate")
+async def rotate(body: RotateRequest, request: Request):
+    return await _run(request, body, _rotate)
+
+
+@router.post("/v1/keys/pending-rotations")
+async def pending(body: Authorized, request: Request):
+    return await _run(request, body, _pending)
