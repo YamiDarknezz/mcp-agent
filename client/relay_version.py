@@ -17,10 +17,24 @@ def is_older(remote: str, local: str = CLIENT_VERSION) -> bool:
     return bool(remote_parts) and remote_parts < local_parts
 
 
+def is_newer(remote: str, local: str = CLIENT_VERSION) -> bool:
+    """Return True when the remote client reports a higher version than ours."""
+    try:
+        remote_parts, local_parts = _parts(remote), _parts(local)
+    except ValueError:
+        return False
+    return bool(remote_parts) and remote_parts > local_parts
+
+
 def warning(remote: str, local: str = CLIENT_VERSION) -> str | None:
-    if not is_older(remote, local):
-        return None
-    return (
-        f"El otro extremo usa cliente {remote} y este usa {local}; "
-        "actualiza ese cliente para interpretar los formatos nuevos."
-    )
+    if is_older(remote, local):
+        return (
+            f"El otro extremo usa cliente {remote} y este usa {local}; "
+            "actualiza ese cliente para interpretar los formatos nuevos."
+        )
+    if is_newer(remote, local):
+        return (
+            f"El otro extremo usa cliente {remote} y este usa {local}; "
+            "actualiza este cliente para interpretar sus formatos nuevos."
+        )
+    return None
