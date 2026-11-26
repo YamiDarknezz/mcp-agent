@@ -4,7 +4,7 @@ import argparse
 import asyncio
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
@@ -30,6 +30,7 @@ else:
 @dataclass
 class BridgeState:
     status: str = "starting"
+    connected_channels: set = field(default_factory=set)
 
 
 class BridgeLease:
@@ -88,9 +89,11 @@ def synchronize(origin, channel_id):
             return
 
 
-async def run(origin, channel_id):
+async def run(origin, channel_id, state=None):
     uri = ("wss://" + origin[8:] if origin.startswith("https://") else "ws://" + origin[7:]) + "/v1/live"
     async for socket in connect(uri, max_size=8192, open_timeout=10, proxy=None):
+        if state is not None:
+            state.connected_channels.add(channel_id)
         try:
             device = DeviceVault(origin).load()
             if device is None:
@@ -111,6 +114,9 @@ async def run(origin, channel_id):
             if error.status in {401, 403, 404}:
                 raise
             await asyncio.sleep(1)
+        finally:
+            if state is not None:
+                state.connected_channels.discard(channel_id)
 
 
 def subscribed_channels(origin):
@@ -130,7 +136,7 @@ def subscribed_channels(origin):
         cursor = next_cursor
 
 
-async def run_subscriptions(origin):
+async def run_subscriptions(origin, state=None):
     tasks = {}
     try:
         while True:
@@ -152,7 +158,7 @@ async def run_subscriptions(origin):
                     del tasks[channel]
             for channel in channels:
                 if channel not in tasks:
-                    tasks[channel] = asyncio.create_task(run(origin, channel))
+                    tasks[channel] = asyncio.create_task(run(origin, channel, state))
             await asyncio.sleep(SUBSCRIPTION_REFRESH_SECONDS)
     finally:
         for task in tasks.values():
@@ -176,7 +182,7 @@ async def run_owned_bridge(origin, state=None):
                         state.status = "standby"
                     else:
                         state.status = "running"
-                        await run_subscriptions(origin)
+                        await run_subscriptions(origin, state)
             except (IdentityError, OSError):
                 state.status = "retrying"
             finally:

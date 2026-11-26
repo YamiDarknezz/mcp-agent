@@ -31,6 +31,11 @@ class Inbox:
             row = conn.execute("SELECT seq FROM inbox_cursors WHERE channel_id=?", (channel_id,)).fetchone()
         return row[0] if row else 0
 
+    def channel_ids(self):
+        with closing(sqlite3.connect(self.path)) as conn:
+            rows = conn.execute("SELECT channel_id FROM inbox_cursors ORDER BY channel_id").fetchall()
+        return [row[0] for row in rows]
+
     def append(self, channel_id, expected, rows):
         with closing(sqlite3.connect(self.path, timeout=10)) as conn, conn:
             conn.execute("BEGIN IMMEDIATE")
