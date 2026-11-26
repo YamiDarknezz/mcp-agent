@@ -51,6 +51,14 @@ jobs:
           test "$("${compose[@]}" exec -T redis redis-cli ping)" = PONG
           "${compose[@]}" exec -T -e RELAY_ACTIVATION_TEST_DB=mcp_agent api \
             python -m server.tests.smoke_activation
+          crypto=(docker compose -p mcp-agent-ci-crypto -f compose.yaml -f compose.dev.yaml)
+          "${crypto[@]}" up -d --wait --wait-timeout 60 db
+          MCP_DEV_PORT=8766 "${crypto[@]}" build api
+          MCP_DEV_PORT=8766 "${crypto[@]}" run --rm --no-deps --interactive=false -T migrate
+          MCP_DEV_PORT=8766 "${crypto[@]}" up -d --no-build --wait --wait-timeout 60 api
+          "${crypto[@]}" exec -T -e RELAY_ACTIVATION_TEST_DB=mcp_agent api \
+            python -m server.tests.smoke_encryption
+          "${crypto[@]}" down -v
 
   deploy:
     name: Deploy the tested commit to the VPS

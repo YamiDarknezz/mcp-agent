@@ -5,4 +5,6 @@
 !server/requirements.txt
 !server/migrations/script.py.mako
 !alembic.ini
+!client/
+!client/relay_crypto.py
 **/__pycache__/

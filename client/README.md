@@ -20,8 +20,22 @@ El MCP ofrece:
 | `create_project(name, slug?)` | Crea el proyecto y su `main` en una sola operación. |
 | `list_projects(limit?, cursor?)` | Lista los proyectos visibles para tu cuenta. |
 | `create_subchannel(parent_id, name, slug?, access?)` | Crea un subcanal de trabajo; `access` es `inherit` o `restricted`. |
+| `setup_encryption` | Publica la clave de cifrado firmada de esta laptop. Una vez por equipo. |
+| `encryption_status` | Muestra huellas de dispositivos y si ya hay clave de un canal. |
+| `share_channel_key` | Crea una clave de canal y la envía envuelta solo a dispositivos autorizados. |
+| `load_channel_key` | Recibe y abre el sobre de clave de este dispositivo. |
+| `crypto_selftest` | Comprueba cifrado y descifrado locales sin enviar contenido. |
 | `relay_help` | Explica las herramientas y lo que aún no existe. |
 
 No hay que darle comandos al agente: OpenCode descubre nombres, parámetros y descripciones. Podrás decir «crea un canal para Tesis». Ninguna herramienta acepta códigos de invitación ni credenciales.
+
+Para activar el cifrado en una laptop, ejecuta en una terminal privada:
+
+```powershell
+python client\relayctl.py --server https://relay.darknezz.dev setup-encryption
+python client\relayctl.py --server https://relay.darknezz.dev devices
+```
+
+Compara las huellas entre laptops por otro canal de confianza. Después, desde el agente usa `share_channel_key` con el ID del canal y `load_channel_key` en la otra laptop. Las claves de canal se guardan en el almacén seguro del sistema, no en archivos del proyecto.
 
 **Para actualizar una laptop:** reinicia el proceso MCP (o reconecta `relay` en `/mcps`) para que cargue el nuevo catálogo. La identidad local no cambia.

@@ -16,8 +16,14 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 from uuid import UUID, uuid4
 
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 import jwt
+
+if __package__:
+    from . import relay_crypto as crypto
+else:
+    import relay_crypto as crypto
 
 
 class IdentityError(RuntimeError):
@@ -98,6 +104,23 @@ def enrollment_lock(origin):
 class LocalKey:
     device_id: str
     private: Ed25519PrivateKey
+
+    def encryption_private(self):
+        seed = self.private.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        )
+        return crypto.derive_encryption_key(seed)
+
+    def encryption_public(self):
+        return self.encryption_private().public_key()
+
+    def encryption_signature(self):
+        return crypto.sign_encryption_key(self.private, self.encryption_public())
+
+    def fingerprint(self):
+        return crypto.fingerprint(crypto.public_bytes(self.encryption_public()))
 
     def proof(self, origin, purpose, **claims):
         now = int(time.time())

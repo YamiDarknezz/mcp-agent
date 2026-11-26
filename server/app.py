@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from server import identity, identity_api, settings, workspace_api
+from server import identity, identity_api, keys_api, settings, workspace_api
 
 
 @asynccontextmanager
@@ -34,6 +34,7 @@ app = FastAPI(
 )
 app.include_router(identity_api.router)
 app.include_router(workspace_api.router)
+app.include_router(keys_api.router)
 
 
 class BodyLimit:
@@ -81,9 +82,10 @@ async def ready(request: Request):
                 if not instance:
                     return JSONResponse({"status": "not_ready"}, status_code=503)
                 tables = await connection.scalar(text("""
-                    SELECT count(*) = 5 FROM information_schema.tables
+                    SELECT count(*) = 7 FROM information_schema.tables
                     WHERE table_schema = 'public' AND table_name = ANY(ARRAY[
-                        'users','devices','channels','channel_memberships','channel_subscriptions'
+                        'users','devices','channels','channel_memberships','channel_subscriptions',
+                        'channel_keys','channel_key_envelopes'
                     ])
                 """))
                 if not tables:

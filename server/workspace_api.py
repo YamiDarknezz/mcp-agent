@@ -55,18 +55,21 @@ class WorkspaceBodyLimit:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or scope["method"] != "POST" or not scope["path"].startswith("/v1/workspace/"):
+        path = scope["path"] if scope["type"] == "http" else ""
+        if scope["type"] != "http" or scope["method"] != "POST" or not path.startswith(("/v1/workspace/", "/v1/keys/")):
             await self.app(scope, receive, send)
             return
+        # Channel-key envelopes are intentionally larger than ordinary requests.
+        limit = 524288 if path.startswith("/v1/keys/publish") else 8192
         body = bytearray()
         try:
-            async with asyncio.timeout(5):
+            async with asyncio.timeout(10 if limit > 8192 else 5):
                 while True:
                     message = await receive()
                     if message["type"] == "http.disconnect":
                         return
                     chunk = message.get("body", b"")
-                    if len(body) + len(chunk) > 8192:
+                    if len(body) + len(chunk) > limit:
                         await error(413)(scope, receive, send)
                         return
                     body.extend(chunk)

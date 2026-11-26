@@ -9,8 +9,10 @@ import warnings
 
 if __package__:
     from .relay_identity import DeviceVault, IdentityError, enroll, enrollment_lock, identify, issue_pair_code, server_origin
+    from .relay_keys import list_devices, setup as setup_encryption
 else:
     from relay_identity import DeviceVault, IdentityError, enroll, enrollment_lock, identify, issue_pair_code, server_origin
+    from relay_keys import list_devices, setup as setup_encryption
 
 
 def _code(pipe: bool) -> str:
@@ -60,6 +62,8 @@ def main() -> int:
         command.add_argument("--code-stdin", action="store_true", help="Read from a private pipe, not a command argument.")
     sub.add_parser("whoami")
     sub.add_parser("pair")
+    sub.add_parser("setup-encryption", help="Publica la clave de cifrado firmada de esta laptop.")
+    sub.add_parser("devices", help="Muestra huellas de los dispositivos para comparar fuera de banda.")
     args = parser.parse_args()
 
     try:
@@ -71,6 +75,18 @@ def main() -> int:
         vault = DeviceVault(origin)
         if args.command in {"activate", "join"}:
             return _register(args, origin, vault)
+        if args.command == "setup-encryption":
+            result = setup_encryption(origin)
+            print('Dispositivo ' + result['device_id'])
+            print('Huella: ' + result['fingerprint'])
+            print('Compara esta huella con la otra laptop por un canal de confianza.')
+            return 0
+        if args.command == "devices":
+            devices = list_devices(origin)["devices"]
+            for device in devices:
+                print('{0} | {1} | {2}'.format(
+                    device["label"], device["id"], device["fingerprint"] or "sin cifrado"))
+            return 0
         key = vault.load()
         if not key:
             raise IdentityError("Esta laptop no tiene una identidad de Relay.")

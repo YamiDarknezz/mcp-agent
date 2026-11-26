@@ -17,6 +17,15 @@ if __package__:
         create_subchannel as api_create_subchannel,
         list_projects as api_list_projects,
     )
+    from .relay_keys import (
+        decrypt as api_decrypt,
+        encrypt as api_encrypt,
+        has_local_key,
+        list_devices as api_list_devices,
+        load as api_load_key,
+        setup as api_setup_encryption,
+        share as api_share_key,
+    )
 else:
     from relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from relay_workspace import (
@@ -24,14 +33,25 @@ else:
         create_subchannel as api_create_subchannel,
         list_projects as api_list_projects,
     )
+    from relay_keys import (
+        decrypt as api_decrypt,
+        encrypt as api_encrypt,
+        has_local_key,
+        list_devices as api_list_devices,
+        load as api_load_key,
+        setup as api_setup_encryption,
+        share as api_share_key,
+    )
 
 
 INSTRUCTIONS = (
     "Relay connects this laptop to an agent workspace. Projects are containers "
     "without chat: creating one also creates its mandatory 'main' subchannel for "
     "coordination. Work happens in subchannels; access is inherited by default, "
-    "while notifications and subscriptions are not. Ask the human for an enrollment "
-    "or pairing code: no Relay tool accepts credentials or codes."
+    "while notifications and subscriptions are not. Content is encrypted on this laptop "
+    "before it reaches the server. Run setup_encryption once per device, then "
+    "share_channel_key and load_channel_key for each channel. Ask the human for an "
+    "enrollment or pairing code: no Relay tool accepts credentials or codes."
 )
 
 
@@ -125,12 +145,71 @@ def create_server(origin: str) -> FastMCP:
         )
 
     @mcp.tool()
+    async def setup_encryption() -> dict:
+        """Publish this device's signed encryption key. Run once per laptop. No secret is returned."""
+        return await asyncio.to_thread(_safe, origin, lambda: api_setup_encryption(origin))
+
+    @mcp.tool()
+    async def encryption_status(channel_id: str | None = None) -> dict:
+        """List device fingerprints for out-of-band comparison and whether a channel key is local."""
+        def action():
+            devices = api_list_devices(origin)["devices"]
+            return {
+                "devices": [
+                    {"id": d["id"], "label": d["label"], "fingerprint": d["fingerprint"]}
+                    for d in devices
+                ],
+                "channel_key_local": (
+                    has_local_key(origin, channel_id) if channel_id else None
+                ),
+                "compare_fingerprints": (
+                    "Compare these values with the other laptop by voice or another trusted channel."
+                ),
+            }
+        return await asyncio.to_thread(_safe, origin, action)
+
+    @mcp.tool()
+    async def share_channel_key(channel_id: str, device_ids: list[str] | None = None) -> dict:
+        """Create a channel key and wrap it only for authorized devices. The server cannot read it."""
+        return await asyncio.to_thread(
+            _safe, origin, lambda: api_share_key(origin, channel_id, device_ids),
+        )
+
+    @mcp.tool()
+    async def load_channel_key(channel_id: str) -> dict:
+        """Receive and unwrap this device's channel key, verifying the sender's signature."""
+        return await asyncio.to_thread(_safe, origin, lambda: api_load_key(origin, channel_id))
+
+    @mcp.tool()
+    async def crypto_selftest(channel_id: str, text: str = "prueba cifrada") -> dict:
+        """Verify that a message can be encrypted and decrypted locally without leaking plaintext."""
+        def action():
+            if not has_local_key(origin, channel_id):
+                return {"error": "This laptop does not hold the channel key yet."}
+            payload = api_encrypt(origin, channel_id, 1, text.encode("utf-8"))
+            leaked = text in str(payload)
+            recovered = api_decrypt(
+                origin, channel_id, 1, payload["nonce"], payload["ciphertext"]
+            ).decode("utf-8")
+            return {
+                "roundtrip": recovered == text,
+                "ciphertext_contains_plaintext": leaked,
+                "channel_id": channel_id,
+            }
+        return await asyncio.to_thread(_safe, origin, action)
+
+    @mcp.tool()
     async def relay_help() -> dict:
-        """Explain how to create projects and subchannels and what is not implemented yet."""
+        """Explain how to create projects, channels and shared keys, and what is not implemented yet."""
         return {
-            "tools": ["status", "create_project", "list_projects", "create_subchannel", "relay_help"],
+            "tools": [
+                "status", "create_project", "list_projects", "create_subchannel",
+                "setup_encryption", "encryption_status", "share_channel_key",
+                "load_channel_key", "crypto_selftest", "relay_help",
+            ],
             "project": "The root is a container with no chat. Create it with a name; Relay creates 'main' automatically.",
             "subchannel": "Create under a project ID or a work subchannel ID. Use access='restricted' to cut inherited access.",
+            "encryption": "Run setup_encryption once, compare fingerprints with the other laptop, then share_channel_key and load_channel_key per channel.",
             "not_yet": ["messages", "channel invitations", "file sharing", "task handoff", "history queries"],
             "enrollment": "Ask the human to use relayctl in a private terminal; never paste a code into a tool call.",
         }

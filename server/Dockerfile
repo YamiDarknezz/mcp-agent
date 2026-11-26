@@ -8,8 +8,9 @@ COPY server/requirements.txt /app/requirements.txt
 RUN python -m pip install --no-cache-dir -r /app/requirements.txt
 COPY alembic.ini /app/alembic.ini
 COPY server /app/server
+COPY client/relay_crypto.py /app/client/relay_crypto.py
 # A private deployment checkout may use umask 077.
-RUN chmod -R a+rX /app/server /app/alembic.ini
+RUN chmod -R a+rX /app/server /app/alembic.ini /app/client
 USER 10001:10001
 EXPOSE 8000
 

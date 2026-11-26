@@ -9,7 +9,9 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 EXPECTED = {
-    "status", "create_project", "list_projects", "create_subchannel", "relay_help",
+    "status", "create_project", "list_projects", "create_subchannel",
+    "setup_encryption", "encryption_status", "share_channel_key",
+    "load_channel_key", "crypto_selftest", "relay_help",
 }
 
 
@@ -39,6 +41,8 @@ async def verify():
                 assert "error" in outcome and "recursion" not in str(outcome).lower()
                 listed = await session.call_tool("list_projects", {})
                 assert not listed.isError
+                enc = await session.call_tool("encryption_status", {})
+                assert not enc.isError
     print("Relay MCP exposes:", ", ".join(sorted(EXPECTED)))
 
 
