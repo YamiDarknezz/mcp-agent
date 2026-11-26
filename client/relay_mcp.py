@@ -23,6 +23,7 @@ if __package__:
         encrypt as api_encrypt,
         has_local_key,
         list_devices as api_list_devices,
+        public_device_fingerprint,
         load as api_load_key,
         setup as api_setup_encryption,
         share as api_share_key,
@@ -40,6 +41,7 @@ else:
         encrypt as api_encrypt,
         has_local_key,
         list_devices as api_list_devices,
+        public_device_fingerprint,
         load as api_load_key,
         setup as api_setup_encryption,
         share as api_share_key,
@@ -159,7 +161,8 @@ def create_server(origin: str) -> FastMCP:
             devices = api_list_devices(origin)["devices"]
             return {
                 "devices": [
-                    {"id": d["id"], "label": d["label"], "fingerprint": d["fingerprint"]}
+                    {"id": d["id"], "label": d["label"],
+                     "fingerprint": public_device_fingerprint(d, origin) if d.get("encryption_key") else None}
                     for d in devices
                 ],
                 "channel_key_local": (
@@ -182,7 +185,7 @@ def create_server(origin: str) -> FastMCP:
 
     @mcp.tool()
     async def load_channel_key(channel_id: str) -> dict:
-        """Receive and unwrap a channel key. The envelope sender is not authenticated yet."""
+        """Verify the pinned sender and signed envelope before loading a channel key."""
         return await asyncio.to_thread(_safe, origin, lambda: api_load_key(origin, channel_id))
 
     @mcp.tool()

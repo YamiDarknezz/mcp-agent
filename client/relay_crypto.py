@@ -30,6 +30,8 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 ENCRYPTION_DOMAIN = b"relay-encryption-key-v1"
 WRAP_DOMAIN = b"relay-wrap-v1"
 MESSAGE_DOMAIN = b"relay-msg-v1"
+ENVELOPE_SIGNATURE_DOMAIN = b"relay-signed-envelope-v2"
+DEVICE_FINGERPRINT_DOMAIN = b"relay-device-fingerprint-v2"
 KEY_SIZE = 32
 NONCE_SIZE = 12
 
@@ -100,6 +102,40 @@ def verify_encryption_key(
         return True
     except InvalidSignature:
         return False
+
+
+def device_fingerprint(auth_public: bytes, encryption_public: bytes) -> str:
+    """Fingerprint both identity keys; neither key alone identifies the device."""
+    if len(auth_public) != 32 or len(encryption_public) != 32:
+        raise ValueError("Invalid device public key.")
+    return hashlib.sha256(_aad(DEVICE_FINGERPRINT_DOMAIN, auth_public, encryption_public)).hexdigest()
+
+
+def sign_envelope(
+    signer: Ed25519PrivateKey, envelope: str, channel_id: str, key_id: str,
+    sender_device_id: str, recipient_device_id: str,
+) -> str:
+    raw = unb64(envelope)
+    authenticated = _aad(ENVELOPE_SIGNATURE_DOMAIN, channel_id, key_id,
+                         sender_device_id, recipient_device_id, raw)
+    return b64(b"\x02" + signer.sign(authenticated) + raw)
+
+
+def verify_envelope(
+    signer: Ed25519PublicKey, signed: str, channel_id: str, key_id: str,
+    sender_device_id: str, recipient_device_id: str,
+) -> str:
+    raw = unb64(signed)
+    if len(raw) != 1 + 64 + 32 + 12 + 32 + 16 or raw[0] != 2:
+        raise ValueError("Unsupported or malformed signed envelope.")
+    signature, envelope = raw[1:65], raw[65:]
+    authenticated = _aad(ENVELOPE_SIGNATURE_DOMAIN, channel_id, key_id,
+                         sender_device_id, recipient_device_id, envelope)
+    try:
+        signer.verify(signature, authenticated)
+    except InvalidSignature:
+        raise ValueError("Channel key envelope signature is invalid.") from None
+    return b64(envelope)
 
 
 def new_channel_key() -> bytes:

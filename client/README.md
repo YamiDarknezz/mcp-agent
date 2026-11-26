@@ -39,8 +39,14 @@ python client\relayctl.py --server https://relay.darknezz.dev setup-encryption
 python client\relayctl.py --server https://relay.darknezz.dev devices
 ```
 
-Compara las huellas entre laptops por otro canal de confianza. Después, desde el agente usa `share_channel_key` con el ID del canal y `load_channel_key` en la otra laptop. Las claves de canal se guardan en el almacén seguro del sistema, no en archivos del proyecto.
+Compara las **huellas de confianza completas de 64 caracteres** entre dispositivos por otro canal de confianza. En cada dispositivo, fija la huella del otro en una terminal humana:
 
-Los mensajes son experimentales: la comparación de huellas todavía no se registra ni se exige y los sobres no autentican al remitente. No usar datos sensibles. La lectura es manual y no existe entrega en vivo. La cola local conserva solo ciphertext e IDs por servidor y dispositivo; si `send_message` devuelve `pending`, usa `retry_messages`. Los reintentos todavía no son automáticos.
+```powershell
+python client\relayctl.py --server https://relay.darknezz.dev trust-device ID_DEL_OTRO HUELLA_COMPLETA
+```
+
+Después usa `share_channel_key` con el ID del canal y `load_channel_key` en la otra laptop. Las claves de canal y las huellas fijadas se guardan en el almacén seguro del sistema. Los sobres antiguos sin firma se rechazan; para pruebas nuevas crea un canal y una clave nuevos, sin eliminar datos anteriores.
+
+Los mensajes son experimentales: aunque los sobres nuevos van firmados y los dispositivos remotos deben fijarse, aún faltan revisión del protocolo, rotación y protección contra omisiones o reordenamientos por el servidor. No usar datos sensibles. La lectura es manual y no existe entrega en vivo. La cola local conserva solo ciphertext e IDs por servidor y dispositivo; si `send_message` devuelve `pending`, usa `retry_messages`. Los reintentos todavía no son automáticos.
 
 **Para actualizar una laptop:** reinicia el proceso MCP (o reconecta `relay` en `/mcps`) para que cargue el nuevo catálogo. La identidad local no cambia.

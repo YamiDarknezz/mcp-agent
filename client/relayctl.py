@@ -9,10 +9,10 @@ import warnings
 
 if __package__:
     from .relay_identity import DeviceVault, IdentityError, enroll, enrollment_lock, identify, issue_pair_code, server_origin
-    from .relay_keys import list_devices, setup as setup_encryption
+    from .relay_keys import list_devices, public_device_fingerprint, setup as setup_encryption, trust_device
 else:
     from relay_identity import DeviceVault, IdentityError, enroll, enrollment_lock, identify, issue_pair_code, server_origin
-    from relay_keys import list_devices, setup as setup_encryption
+    from relay_keys import list_devices, public_device_fingerprint, setup as setup_encryption, trust_device
 
 
 def _code(pipe: bool) -> str:
@@ -64,6 +64,9 @@ def main() -> int:
     sub.add_parser("pair")
     sub.add_parser("setup-encryption", help="Publica la clave de cifrado firmada de esta laptop.")
     sub.add_parser("devices", help="Muestra huellas de los dispositivos para comparar fuera de banda.")
+    trust = sub.add_parser("trust-device", help="Fija una huella comprobada fuera de Relay.")
+    trust.add_argument("device_id")
+    trust.add_argument("fingerprint", help="Huella completa de identidad de 64 caracteres.")
     args = parser.parse_args()
 
     try:
@@ -79,13 +82,20 @@ def main() -> int:
             result = setup_encryption(origin)
             print('Dispositivo ' + result['device_id'])
             print('Huella: ' + result['fingerprint'])
+            print('Huella de confianza: ' + result['trust_fingerprint'])
             print('Compara esta huella con la otra laptop por un canal de confianza.')
             return 0
         if args.command == "devices":
             devices = list_devices(origin)["devices"]
             for device in devices:
-                print('{0} | {1} | {2}'.format(
-                    device["label"], device["id"], device["fingerprint"] or "sin cifrado"))
+                fingerprint = public_device_fingerprint(device, origin) if device.get("encryption_key") else "sin cifrado"
+                print('{0} | {1} | {2}'.format(device["label"], device["id"], fingerprint))
+            return 0
+        if args.command == "trust-device":
+            if not sys.stdin.isatty() or not sys.stdout.isatty():
+                raise IdentityError("Confirma la huella desde una terminal humana de confianza.")
+            trust_device(origin, args.device_id, args.fingerprint)
+            print("Huella fijada para este dispositivo.")
             return 0
         key = vault.load()
         if not key:

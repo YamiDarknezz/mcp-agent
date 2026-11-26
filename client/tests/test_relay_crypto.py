@@ -68,6 +68,41 @@ class CryptoTests(unittest.TestCase):
                 self.bob_x, crypto.b64(bytes(raw)), self.channel, self.alice_id, self.bob_id
             )
 
+    def test_signed_envelope_authenticates_sender_channel_recipient_and_version(self):
+        key_id = "44444444-4444-4444-8444-444444444444"
+        envelope = crypto.wrap_channel_key(
+            self.alice_x, self.bob_x.public_key(), self.key,
+            self.channel, self.alice_id, self.bob_id,
+        )
+        signed = crypto.sign_envelope(
+            self.alice_ed, envelope, self.channel, key_id, self.alice_id, self.bob_id,
+        )
+        self.assertEqual(crypto.verify_envelope(
+            self.alice_ed.public_key(), signed, self.channel, key_id, self.alice_id, self.bob_id,
+        ), envelope)
+        for public, signed_value, channel, version, sender, recipient in (
+            (self.bob_ed.public_key(), signed, self.channel, key_id, self.alice_id, self.bob_id),
+            (self.alice_ed.public_key(), signed, self.bob_id, key_id, self.alice_id, self.bob_id),
+            (self.alice_ed.public_key(), signed, self.channel, self.bob_id, self.alice_id, self.bob_id),
+            (self.alice_ed.public_key(), signed, self.channel, key_id, self.bob_id, self.bob_id),
+            (self.alice_ed.public_key(), signed, self.channel, key_id, self.alice_id, self.alice_id),
+            (self.alice_ed.public_key(), envelope, self.channel, key_id, self.alice_id, self.bob_id),
+        ):
+            with self.subTest(channel=channel, version=version, sender=sender), self.assertRaises(ValueError):
+                crypto.verify_envelope(public, signed_value, channel, version, sender, recipient)
+
+    def test_device_fingerprint_binds_both_public_keys(self):
+        alice_auth = self.alice_ed.public_key().public_bytes_raw()
+        alice_encryption = crypto.public_bytes(self.alice_x.public_key())
+        fingerprint = crypto.device_fingerprint(alice_auth, alice_encryption)
+        self.assertEqual(len(fingerprint), 64)
+        self.assertNotEqual(fingerprint, crypto.device_fingerprint(
+            self.bob_ed.public_key().public_bytes_raw(), alice_encryption,
+        ))
+        self.assertNotEqual(fingerprint, crypto.device_fingerprint(
+            alice_auth, crypto.public_bytes(self.bob_x.public_key()),
+        ))
+
     def test_message_aad_binds_channel_and_sequence(self):
         secret = b"contrasena-solo-para-el-equipo"
         nonce, ciphertext = crypto.encrypt_message(self.key, self.channel, 7, secret)

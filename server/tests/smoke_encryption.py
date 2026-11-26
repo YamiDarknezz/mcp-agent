@@ -142,12 +142,15 @@ def main():
     root_id = project["project"]["id"]
     channel_id = project["main"]["id"]
     channel_key = crypto.new_channel_key()
+    active_key_id = str(uuid4())
 
     def envelope_for(device):
-        return crypto.wrap_channel_key(
+        envelope = crypto.wrap_channel_key(
             alice.x, device.x.public_key(), channel_key, channel_id,
             str(alice.id), str(device.id),
         )
+        return crypto.sign_envelope(alice.ed, envelope, channel_id, active_key_id,
+                                    str(alice.id), str(device.id))
 
     status, _ = post("/v1/keys/publish", {
         **alice.proof("workspace"), "channel_id": root_id, "key_id": str(uuid4()),
@@ -206,7 +209,7 @@ def main():
     })
     assert status == 403
     status, published = post("/v1/keys/publish", {
-        **alice.proof("workspace"), "channel_id": channel_id, "key_id": str(uuid4()),
+        **alice.proof("workspace"), "channel_id": channel_id, "key_id": active_key_id,
         "envelopes": {str(alice.id): envelope_for(alice), str(bob.id): envelope_for(bob)},
     })
     assert status == 200 and published["recipients"] == 2
@@ -225,8 +228,12 @@ def main():
 
     status, fetched = post("/v1/keys/fetch", {**bob.proof("workspace"), "channel_id": channel_id})
     assert status == 200
+    verified = crypto.verify_envelope(
+        alice.ed.public_key(), fetched["envelope"], channel_id, fetched["key_id"],
+        str(alice.id), str(bob.id),
+    )
     unwrapped = crypto.unwrap_channel_key(
-        bob.x, fetched["envelope"], channel_id, str(alice.id), str(bob.id)
+        bob.x, verified, channel_id, str(alice.id), str(bob.id)
     )
     assert unwrapped == channel_key
     assert crypto.fingerprint(channel_key) not in json.dumps(fetched)
