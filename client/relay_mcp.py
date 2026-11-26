@@ -39,6 +39,7 @@ if __package__:
         share as api_share_key,
     )
     from .relay_inbox import Inbox
+    from . import relay_validation as valid
 else:
     from relay_live import BridgeState, run_owned_bridge
     from relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
@@ -67,6 +68,7 @@ else:
         share as api_share_key,
     )
     from relay_inbox import Inbox
+    import relay_validation as valid
 
 
 INSTRUCTIONS = (
@@ -207,8 +209,8 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def list_projects(limit: int = 50, cursor: str | None = None) -> dict:
         """List the projects this laptop's account can see, newest first, paginated."""
-        if not 1 <= limit <= 100:
-            return {"error": "limit must be between 1 and 100"}
+        if problem := valid.limit(limit):
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_list_projects(origin, limit, cursor),
         )
@@ -218,8 +220,10 @@ def create_server(origin: str) -> FastMCP:
         project_id: str | None = None, limit: int = 50, cursor: str | None = None
     ) -> dict:
         """List accessible channels, optionally filtered by project. Visibility is not access."""
-        if not 1 <= limit <= 100:
-            return {"error": "limit must be between 1 and 100"}
+        if problem := valid.limit(limit):
+            return problem
+        if project_id is not None and (problem := valid.channel_id(project_id)):
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_list_channels(origin, project_id, limit, cursor),
         )
@@ -234,8 +238,10 @@ def create_server(origin: str) -> FastMCP:
         parent_id: str, name: str, slug: str | None = None, access: str = "inherit"
     ) -> dict:
         """Create a work subchannel under a visible project or subchannel, not under 'main'."""
-        if access not in {"inherit", "restricted"}:
-            return {"error": "access must be inherit or restricted"}
+        if problem := valid.channel_id(parent_id):
+            return problem
+        if problem := valid.choice(access, {"inherit", "restricted"}, "access"):
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_create_subchannel(origin, parent_id, name, slug, access),
         )
@@ -243,6 +249,10 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def set_subscription(channel_id: str, mode: Literal["all", "mentions", "muted"] | None) -> dict:
         """Follow a channel with a preference, or pass null to unfollow. Does not grant access."""
+        if problem := valid.channel_id(channel_id):
+            return problem
+        if mode is not None and (problem := valid.choice(mode, {"all", "mentions", "muted"}, "mode")):
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_set_subscription(origin, channel_id, mode),
         )
@@ -250,8 +260,8 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def list_subscriptions(limit: int = 100, cursor: str | None = None) -> dict:
         """List accessible followed channels; subscriptions are never inherited."""
-        if not 1 <= limit <= 100:
-            return {"error": "limit must be between 1 and 100"}
+        if problem := valid.limit(limit):
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_list_subscriptions(origin, limit, cursor),
         )
@@ -293,19 +303,25 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def load_channel_key(channel_id: str) -> dict:
         """Verify the pinned sender and signed envelope before loading a channel key."""
+        if problem := valid.channel_id(channel_id):
+            return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_load_key(origin, channel_id))
 
     @mcp.tool()
     async def ensure_channel_key(channel_id: str) -> dict:
         """Create or reuse a channel key and load it here in one idempotent step."""
+        if problem := valid.channel_id(channel_id):
+            return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_ensure_key(origin, channel_id))
 
     @mcp.tool()
     async def crypto_selftest(channel_id: str, text: str = "prueba cifrada") -> dict:
         """Verify that a message can be encrypted and decrypted locally without leaking plaintext."""
+        if problem := valid.channel_id(channel_id):
+            return problem
         def action():
             if not has_local_key(origin, channel_id):
-                return {"error": "This laptop does not hold the channel key yet."}
+                return {"error": "Esta laptop no tiene la clave del canal. Ejecuta ensure_channel_key(channel_id) primero."}
             payload = api_encrypt(origin, channel_id, 1, text.encode("utf-8"))
             leaked = text in str(payload)
             recovered = api_decrypt(
@@ -321,6 +337,8 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def send_message(channel_id: str, content: str, mentions: list[str] | None = None) -> dict:
         """Send encrypted test content; optional mentions are account UUIDs encrypted with the content."""
+        if problem := valid.channel_id(channel_id):
+            return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_send_message(origin, channel_id, content, mentions))
 
     @mcp.tool()
@@ -331,15 +349,23 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def read_messages(channel_id: str, after: int = 0, limit: int = 10) -> dict:
         """Read and locally decrypt a page of channel messages after a sequence."""
-        if after < 0 or not 1 <= limit <= 10:
-            return {"error": "after must be nonnegative and limit must be between 1 and 10"}
+        if problem := valid.after(after):
+            return problem
+        if problem := valid.limit(limit, maximum=10):
+            return problem
+        if problem := valid.channel_id(channel_id):
+            return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_read_messages(origin, channel_id, after, limit))
 
     @mcp.tool()
     async def read_inbox(channel_id: str, after: int = 0, limit: int = 10) -> dict:
         """Read local messages collected by the experimental live bridge."""
-        if after < 0 or not 1 <= limit <= 10:
-            return {"error": "after must be nonnegative and limit must be between 1 and 10"}
+        if problem := valid.after(after):
+            return problem
+        if problem := valid.limit(limit, maximum=10):
+            return problem
+        if problem := valid.channel_id(channel_id):
+            return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_read_inbox(origin, channel_id, after, limit))
 
     @mcp.tool()
@@ -350,13 +376,17 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def announce_channel(channel_id: str, note: str = "") -> dict:
         """Inform another laptop about a channel via encrypted main. Does not grant access or follow it."""
+        if problem := valid.channel_id(channel_id):
+            return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_announce_channel(origin, channel_id, note))
 
     @mcp.tool()
     async def list_channel_announcements(after: int = 0, limit: int = 10) -> dict:
         """Read deduplicated channel announcements already synced into the local inbox."""
-        if after < 0 or not 1 <= limit <= 10:
-            return {"error": "after must be nonnegative and limit must be between 1 and 10"}
+        if problem := valid.after(after):
+            return problem
+        if problem := valid.limit(limit, maximum=10):
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_list_announcements(origin, after, limit),
         )
@@ -375,8 +405,12 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def list_alerts(channel_id: str, after: int = 0, limit: int = 10) -> dict:
         """Inspect local notification candidates without starting or interrupting an agent."""
-        if after < 0 or not 1 <= limit <= 10:
-            return {"error": "after must be nonnegative and limit must be between 1 and 10"}
+        if problem := valid.after(after):
+            return problem
+        if problem := valid.limit(limit, maximum=10):
+            return problem
+        if problem := valid.channel_id(channel_id):
+            return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_alerts(origin, channel_id, after, limit))
 
     @mcp.tool()
@@ -384,6 +418,8 @@ def create_server(origin: str) -> FastMCP:
         channel_id: str, summary: str, objective: str = "", links: list[str] | None = None
     ) -> dict:
         """Propose a task with encrypted content. This never executes anything."""
+        if problem := valid.channel_id(channel_id):
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_propose_task(origin, channel_id, summary, objective, links),
         )
@@ -394,8 +430,14 @@ def create_server(origin: str) -> FastMCP:
         limit: int = 30,
     ) -> dict:
         """List and locally decrypt tasks in a channel."""
-        if not 1 <= limit <= 100:
-            return {"error": "limit must be between 1 and 100"}
+        if problem := valid.channel_id(channel_id):
+            return problem
+        if problem := valid.limit(limit):
+            return problem
+        if status is not None and (problem := valid.choice(
+            status, {"open", "claimed", "done", "cancelled"}, "status"
+        )):
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_list_tasks(origin, channel_id, status, limit),
         )
@@ -403,16 +445,28 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def claim_task(channel_id: str, task_id: str) -> dict:
         """Reserve an open task. Accepting here grants no permission to run anything."""
+        for problem in (valid.channel_id(channel_id), valid.channel_id(task_id)):
+            if problem:
+                return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_claim_task(origin, channel_id, task_id))
 
     @mcp.tool()
     async def release_task(channel_id: str, task_id: str) -> dict:
         """Release a task this device claimed, allowing others to take it."""
+        for problem in (valid.channel_id(channel_id), valid.channel_id(task_id)):
+            if problem:
+                return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_release_task(origin, channel_id, task_id))
 
     @mcp.tool()
     async def complete_task(channel_id: str, task_id: str, generation: int) -> dict:
         """Complete a claimed task with its generation; a stale generation is rejected."""
+        for problem in (valid.channel_id(channel_id), valid.channel_id(task_id)):
+            if problem:
+                return problem
+        if isinstance(generation, bool) or not isinstance(generation, int) or generation < 1:
+            return valid._error("generation", f"valor {generation} inválido",
+                                "Usa la generación devuelta por claim_task o release_task.")
         return await asyncio.to_thread(
             _safe, origin, lambda: api_complete_task(origin, channel_id, task_id, generation),
         )
@@ -434,7 +488,8 @@ def create_server(origin: str) -> FastMCP:
             "subchannel": "Create under a project ID or a work subchannel ID. Use access='restricted' to cut inherited access.",
             "encryption": "Run setup_encryption once, compare fingerprints with the other laptop, then share_channel_key and load_channel_key per channel, or ensure_channel_key to do both idempotently.",
             "tasks": "Propose, claim and complete tasks. The MCP coordinates only; your runtime decides what it can execute.",
-            "not_yet": ["push notifications", "cross-device alert read state", "channel invitations", "file sharing"],
+            "not_yet": ["push notifications", "channel invitations", "file sharing"],
+            "read_state": "Cada dispositivo guarda su propio cursor en el buzón local. No hay estado de lectura cruzado: marcar leído aquí no cambia lo que otro dispositivo ve.",
             "enrollment": "Ask the human to use relayctl in a private terminal; never paste a code into a tool call.",
         }
 
