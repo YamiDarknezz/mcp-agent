@@ -4,8 +4,8 @@ Nothing in this module sends data. The server only ever sees ciphertext and
 public key material; channel keys and private keys never leave the laptop.
 
 Key separation: the Ed25519 authentication seed already stored in the OS
-vault is expanded with HKDF into an independent X25519 key for encryption.
-Compromise of one domain does not reveal the other.
+vault is expanded with HKDF into an X25519 key for encryption. Compromise of
+the seed compromises both authentication and encryption keys.
 """
 
 import base64

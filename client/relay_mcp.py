@@ -50,8 +50,9 @@ INSTRUCTIONS = (
     "Relay connects this laptop to an agent workspace. Projects are containers "
     "without chat: creating one also creates its mandatory 'main' subchannel for "
     "coordination. Work happens in subchannels; access is inherited by default, "
-    "while notifications and subscriptions are not. Content is encrypted on this laptop "
-    "before it reaches the server. Run setup_encryption once per device, then "
+    "while notifications and subscriptions are not. Experimental messages are encrypted "
+    "locally, but key distribution does not yet resist an active server. Use test data only. "
+    "Run setup_encryption once per device, then "
     "share_channel_key and load_channel_key for each channel. Ask the human for an "
     "enrollment or pairing code: no Relay tool accepts credentials or codes."
 )
@@ -181,7 +182,7 @@ def create_server(origin: str) -> FastMCP:
 
     @mcp.tool()
     async def load_channel_key(channel_id: str) -> dict:
-        """Receive and unwrap this device's channel key, verifying the sender's signature."""
+        """Receive and unwrap a channel key. The envelope sender is not authenticated yet."""
         return await asyncio.to_thread(_safe, origin, lambda: api_load_key(origin, channel_id))
 
     @mcp.tool()
