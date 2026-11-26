@@ -33,9 +33,13 @@ class Outbox:
                 CREATE TABLE IF NOT EXISTS pending (
                     operation_id TEXT PRIMARY KEY, channel_id TEXT NOT NULL,
                     nonce TEXT NOT NULL, ciphertext TEXT NOT NULL,
+                    expected_seq INTEGER,
                     created_at INTEGER NOT NULL DEFAULT (unixepoch())
                 )
             """)
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(pending)")}
+            if "expected_seq" not in columns:
+                conn.execute("ALTER TABLE pending ADD COLUMN expected_seq INTEGER")
 
     def _open(self):
         return sqlite3.connect(self.path, timeout=10)
@@ -43,16 +47,20 @@ class Outbox:
     def add(self, payload: dict):
         with closing(self._open()) as conn, conn:
             conn.execute(
-                "INSERT INTO pending (operation_id, channel_id, nonce, ciphertext) VALUES (?, ?, ?, ?)",
-                (payload["operation_id"], payload["channel_id"], payload["nonce"], payload["ciphertext"]),
+                """INSERT INTO pending (operation_id, channel_id, nonce, ciphertext, expected_seq)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (payload["operation_id"], payload["channel_id"], payload["nonce"], payload["ciphertext"],
+                 payload.get("expected_seq")),
             )
 
     def pending(self, limit: int = 100) -> list[dict]:
         with closing(self._open()) as conn, conn:
             rows = conn.execute(
-                "SELECT operation_id, channel_id, nonce, ciphertext FROM pending ORDER BY rowid LIMIT ?", (limit,),
+                """SELECT operation_id, channel_id, nonce, ciphertext, expected_seq
+                   FROM pending ORDER BY rowid LIMIT ?""", (limit,),
             ).fetchall()
-        return [dict(zip(("operation_id", "channel_id", "nonce", "ciphertext"), row)) for row in rows]
+        return [dict(zip(("operation_id", "channel_id", "nonce", "ciphertext", "expected_seq"), row))
+                for row in rows]
 
     def remove(self, operation_id: str):
         with closing(self._open()) as conn, conn:

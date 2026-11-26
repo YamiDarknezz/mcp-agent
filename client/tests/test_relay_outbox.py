@@ -21,7 +21,7 @@ class OutboxTests(unittest.TestCase):
                 stored.setdefault(payload["operation_id"], dict(payload))
                 if len(calls) == 1:
                     raise IdentityError("Conexión interrumpida.")
-                return {"operation_id": payload["operation_id"], "seq": 1}
+                return {"operation_id": payload["operation_id"], "seq": payload.get("expected_seq", 1)}
 
             with patch.object(relay_outbox, "_state_path", return_value=path), \
                  patch.object(relay_messages, "DeviceVault") as vault, \
