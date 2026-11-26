@@ -21,6 +21,8 @@ if __package__:
         create_project as api_create_project,
         create_subchannel as api_create_subchannel,
         list_projects as api_list_projects,
+        list_channels as api_list_channels,
+        directory as api_directory,
         set_subscription as api_set_subscription,
         list_subscriptions as api_list_subscriptions,
     )
@@ -28,6 +30,7 @@ if __package__:
         ChannelKeyStore,
         decrypt as api_decrypt,
         encrypt as api_encrypt,
+        ensure as api_ensure_key,
         has_local_key,
         list_devices as api_list_devices,
         public_device_fingerprint,
@@ -46,6 +49,8 @@ else:
         create_project as api_create_project,
         create_subchannel as api_create_subchannel,
         list_projects as api_list_projects,
+        list_channels as api_list_channels,
+        directory as api_directory,
         set_subscription as api_set_subscription,
         list_subscriptions as api_list_subscriptions,
     )
@@ -53,6 +58,7 @@ else:
         ChannelKeyStore,
         decrypt as api_decrypt,
         encrypt as api_encrypt,
+        ensure as api_ensure_key,
         has_local_key,
         list_devices as api_list_devices,
         public_device_fingerprint,
@@ -70,8 +76,9 @@ INSTRUCTIONS = (
     "while notifications and subscriptions are not. Experimental messages are encrypted "
     "locally, but key distribution does not yet resist an active server. Use test data only. "
     "Run setup_encryption once per device, then "
-    "share_channel_key and load_channel_key for each channel. Ask the human for an "
-    "enrollment or pairing code: no Relay tool accepts credentials or codes."
+    "share_channel_key and load_channel_key for each channel, or ensure_channel_key "
+    "to do both in one idempotent step. Ask the human for an enrollment or pairing "
+    "code: no Relay tool accepts credentials or codes."
 )
 
 
@@ -207,6 +214,22 @@ def create_server(origin: str) -> FastMCP:
         )
 
     @mcp.tool()
+    async def list_channels(
+        project_id: str | None = None, limit: int = 50, cursor: str | None = None
+    ) -> dict:
+        """List accessible channels, optionally filtered by project. Visibility is not access."""
+        if not 1 <= limit <= 100:
+            return {"error": "limit must be between 1 and 100"}
+        return await asyncio.to_thread(
+            _safe, origin, lambda: api_list_channels(origin, project_id, limit, cursor),
+        )
+
+    @mcp.tool()
+    async def directory() -> dict:
+        """List mentionable account and device IDs. No keys or credentials are returned."""
+        return await asyncio.to_thread(_safe, origin, lambda: api_directory(origin))
+
+    @mcp.tool()
     async def create_subchannel(
         parent_id: str, name: str, slug: str | None = None, access: str = "inherit"
     ) -> dict:
@@ -271,6 +294,11 @@ def create_server(origin: str) -> FastMCP:
     async def load_channel_key(channel_id: str) -> dict:
         """Verify the pinned sender and signed envelope before loading a channel key."""
         return await asyncio.to_thread(_safe, origin, lambda: api_load_key(origin, channel_id))
+
+    @mcp.tool()
+    async def ensure_channel_key(channel_id: str) -> dict:
+        """Create or reuse a channel key and load it here in one idempotent step."""
+        return await asyncio.to_thread(_safe, origin, lambda: api_ensure_key(origin, channel_id))
 
     @mcp.tool()
     async def crypto_selftest(channel_id: str, text: str = "prueba cifrada") -> dict:
@@ -394,14 +422,17 @@ def create_server(origin: str) -> FastMCP:
         """Explain how to create projects, channels and shared keys, and what is not implemented yet."""
         return {
             "tools": [
-                "status", "create_project", "list_projects", "create_subchannel", "set_subscription", "list_subscriptions",
+                "status", "create_project", "list_projects", "list_channels", "directory",
+                "create_subchannel", "set_subscription", "list_subscriptions",
                 "setup_encryption", "encryption_status", "share_channel_key",
-                "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "read_inbox", "channel_status", "my_identity", "list_alerts", "announce_channel", "list_channel_announcements",
+                "load_channel_key", "ensure_channel_key", "channel_status", "crypto_selftest",
+                "send_message", "read_messages", "retry_messages", "read_inbox", "my_identity", "list_alerts",
+                "announce_channel", "list_channel_announcements",
                 "propose_task", "list_tasks", "claim_task", "release_task", "complete_task", "relay_help",
             ],
             "project": "The root is a container with no chat. Create it with a name; Relay creates 'main' automatically.",
             "subchannel": "Create under a project ID or a work subchannel ID. Use access='restricted' to cut inherited access.",
-            "encryption": "Run setup_encryption once, compare fingerprints with the other laptop, then share_channel_key and load_channel_key per channel.",
+            "encryption": "Run setup_encryption once, compare fingerprints with the other laptop, then share_channel_key and load_channel_key per channel, or ensure_channel_key to do both idempotently.",
             "tasks": "Propose, claim and complete tasks. The MCP coordinates only; your runtime decides what it can execute.",
             "not_yet": ["push notifications", "cross-device alert read state", "channel invitations", "file sharing"],
             "enrollment": "Ask the human to use relayctl in a private terminal; never paste a code into a tool call.",

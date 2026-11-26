@@ -19,6 +19,8 @@ El MCP ofrece:
 | `status` | Salud del servicio y si la laptop está registrada. |
 | `create_project(name, slug?)` | Crea el proyecto y su `main` en una sola operación. |
 | `list_projects(limit?, cursor?)` | Lista los proyectos visibles para tu cuenta. |
+| `list_channels(project_id?, limit?, cursor?)` | Lista los canales visibles, opcionalmente de un proyecto. Ver no concede acceso. |
+| `directory()` | Devuelve IDs de cuenta y dispositivo para menciones; sin claves ni credenciales. |
 | `create_subchannel(parent_id, name, slug?, access?)` | Crea un subcanal de trabajo; `access` es `inherit` o `restricted`. |
 | `set_subscription` | Sigue un canal con preferencia `all`, `mentions` o `muted`; `null` deja de seguirlo. No concede acceso. |
 | `list_subscriptions` | Lista las suscripciones accesibles, sin herencia automática. |
@@ -26,6 +28,7 @@ El MCP ofrece:
 | `encryption_status` | Muestra huellas de dispositivos y si ya hay clave de un canal. |
 | `share_channel_key` | Crea una clave de canal y la envía envuelta solo a dispositivos autorizados. |
 | `load_channel_key` | Recibe y abre el sobre de clave de este dispositivo. |
+| `ensure_channel_key` | Crea o reutiliza la clave de canal y la carga aquí en un paso idempotente. |
 | `crypto_selftest` | Comprueba cifrado y descifrado locales sin enviar contenido. |
 | `send_message` | Envía un mensaje de prueba cifrado con la clave local del canal. |
 | `read_messages` | Consulta y descifra una página después de una secuencia. |
