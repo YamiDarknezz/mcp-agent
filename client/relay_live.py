@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import os
+from dataclasses import dataclass
 
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
@@ -16,12 +17,58 @@ if __package__:
     from .relay_messages import retry_pending
     from .relay_workspace import _call
     from .relay_workspace import list_subscriptions
+    from .relay_outbox import _state_path
 else:
     from relay_identity import DeviceVault, IdentityError, server_origin
     from relay_inbox import Inbox
     from relay_messages import retry_pending
     from relay_workspace import _call
     from relay_workspace import list_subscriptions
+    from relay_outbox import _state_path
+
+
+@dataclass
+class BridgeState:
+    status: str = "starting"
+
+
+class BridgeLease:
+    """Non-blocking per-origin/device lock shared by MCP and manual bridges."""
+
+    def __init__(self, file):
+        self.file = file
+
+    @classmethod
+    def acquire(cls, origin, device_id):
+        path = _state_path(origin, device_id).with_suffix(".bridge.lock")
+        file = open(path, "a+b")
+        try:
+            if os.name == "nt":
+                import msvcrt
+                if file.seek(0, os.SEEK_END) == 0:
+                    file.write(b"\0")
+                    file.flush()
+                file.seek(0)
+                msvcrt.locking(file.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (OSError, BlockingIOError):
+            file.close()
+            return None
+        return cls(file)
+
+    def close(self):
+        try:
+            if os.name == "nt":
+                import msvcrt
+                self.file.seek(0)
+                msvcrt.locking(self.file.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.file.fileno(), fcntl.LOCK_UN)
+        finally:
+            self.file.close()
 
 
 def synchronize(origin, channel_id):
@@ -57,7 +104,6 @@ async def run(origin, channel_id):
                 if event.get("type") not in {"ready", "changed", "reconcile"}:
                     raise ValueError("Invalid Relay live event.")
                 await asyncio.to_thread(synchronize, origin, channel_id)
-                await asyncio.to_thread(retry_pending, origin)
         except ConnectionClosed as error:
             if error.rcvd and error.rcvd.code == 1008:
                 raise IdentityError("Relay rechazó el dispositivo o su acceso al canal.") from None
@@ -90,6 +136,7 @@ async def run_subscriptions(origin):
         while True:
             try:
                 channels = await asyncio.to_thread(subscribed_channels, origin)
+                await asyncio.to_thread(retry_pending, origin)
             except IdentityError as error:
                 if error.status in {401, 403}:
                     raise
@@ -113,6 +160,33 @@ async def run_subscriptions(origin):
         await asyncio.gather(*tasks.values(), return_exceptions=True)
 
 
+async def run_owned_bridge(origin, state=None):
+    """Start one bridge per device; another MCP waits until the owner exits."""
+    state = state or BridgeState()
+    try:
+        while True:
+            lease = None
+            try:
+                device = await asyncio.to_thread(lambda: DeviceVault(origin).load())
+                if device is None:
+                    state.status = "unregistered"
+                else:
+                    lease = BridgeLease.acquire(origin, device.device_id)
+                    if lease is None:
+                        state.status = "standby"
+                    else:
+                        state.status = "running"
+                        await run_subscriptions(origin)
+            except (IdentityError, OSError):
+                state.status = "retrying"
+            finally:
+                if lease:
+                    lease.close()
+            await asyncio.sleep(SUBSCRIPTION_REFRESH_SECONDS)
+    finally:
+        state.status = "stopped"
+
+
 def main():
     parser = argparse.ArgumentParser(description="Experimental Relay live bridge.")
     parser.add_argument("--server", default=os.getenv("MCP_AGENT_SERVER_URL"))
@@ -121,7 +195,7 @@ def main():
     selection.add_argument("--subscriptions", action="store_true")
     args = parser.parse_args()
     origin = server_origin(args.server)
-    asyncio.run(run_subscriptions(origin) if args.subscriptions else run(origin, args.channel))
+    asyncio.run(run_owned_bridge(origin) if args.subscriptions else run(origin, args.channel))
 
 
 if __name__ == "__main__":

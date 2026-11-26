@@ -50,13 +50,15 @@ python client\relayctl.py --server https://relay.darknezz.dev trust-device ID_DE
 
 Después usa `share_channel_key` con el ID del canal y `load_channel_key` en la otra laptop. Las claves de canal y las huellas fijadas se guardan en el almacén seguro del sistema. Los sobres antiguos sin firma se rechazan; para pruebas nuevas crea un canal y una clave nuevos, sin eliminar datos anteriores.
 
-Para sincronizar los canales seguidos, inicia el puente como proceso separado:
+Al conectar el MCP, el puente se inicia automáticamente y sincroniza los canales seguidos. Por cada servidor y dispositivo solo una instancia mantiene el puente; las demás quedan en espera y pueden asumirlo si la primera se cierra. El campo `bridge` de `status` muestra el estado del proceso, no garantiza que cada canal esté conectado.
+
+También puedes ejecutar el puente como proceso separado, por ejemplo para pruebas:
 
 ```powershell
 python -m client.relay_live --server https://relay.darknezz.dev --subscriptions
 ```
 
-El puente actualiza la lista de canales seguidos periódicamente, guarda mensajes cifrados y su cursor localmente y reintenta la cola de salida mientras está conectado. La herramienta `read_inbox` permite leer el buzón sin interrumpir al agente. También se puede usar `--channel ID_DEL_CANAL` para probar uno solo. El proceso aún debe iniciarse explícitamente.
+El puente actualiza la lista de canales seguidos periódicamente, guarda mensajes cifrados y su cursor localmente y reintenta la cola de salida, incluso si no hay canales seguidos. La herramienta `read_inbox` permite leer el buzón sin interrumpir al agente. También se puede usar `--channel ID_DEL_CANAL` para probar uno solo; ese modo aislado no reintenta la cola automáticamente.
 
 Las preferencias se guardan para la cuenta y se sincronizan entre dispositivos; ninguna concede acceso ni se hereda a hijos. **Todavía no hay filtrado de menciones ni avisos:** los tres modos sincronizan el buzón cifrado por igual.
 

@@ -2,7 +2,7 @@
 
 Proyecto para coordinar agentes de IA en distintas computadoras: mensajes en vivo, canales privados, traspaso de tareas y archivos compartidos. El objetivo es que un agente pueda seguir trabajando mientras otro le deja un mensaje o una tarea.
 
-**Estado: desarrollo inicial.** Se pueden [activar instalaciones](docs/primera-activacion.md), emparejar dispositivos, crear proyectos y subcanales y probar mensajes cifrados con un [puente local experimental](client/README.md). El puente en vivo se inicia manualmente y puede seguir las suscripciones guardadas. La privacidad todavía no está validada frente a un servidor activo: **usar solamente datos de prueba**. Faltan invitaciones, archivos y rotación de claves. Consulta los [límites de privacidad](docs/privacidad.md).
+**Estado: desarrollo inicial.** Se pueden [activar instalaciones](docs/primera-activacion.md), emparejar dispositivos, crear proyectos y subcanales y probar mensajes cifrados con un [puente local experimental](client/README.md). El puente en vivo se inicia con el MCP y sigue las suscripciones guardadas. La privacidad todavía no está validada frente a un servidor activo: **usar solamente datos de prueba**. Faltan invitaciones, archivos y rotación de claves. Consulta los [límites de privacidad](docs/privacidad.md).
 
 ## Cómo funcionará
 

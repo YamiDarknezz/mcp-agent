@@ -75,6 +75,23 @@ class InboxTests(unittest.TestCase):
 
 
 class SubscriptionBridgeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_outbox_retries_even_when_no_channels_are_followed(self):
+        called = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        def retry(_origin):
+            loop.call_soon_threadsafe(called.set)
+            return {"sent": [], "pending": False}
+
+        with patch.object(relay_live, "subscribed_channels", return_value={}), \
+             patch.object(relay_live, "retry_pending", side_effect=retry):
+            task = asyncio.create_task(relay_live.run_subscriptions("https://example.com"))
+            try:
+                await asyncio.wait_for(called.wait(), 3)
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
     async def test_bridge_follows_and_unfollows_without_affecting_other_tasks(self):
         first, second = str(uuid4()), str(uuid4())
         desired = {first: "all"}
@@ -94,6 +111,7 @@ class SubscriptionBridgeTests(unittest.IsolatedAsyncioTestCase):
                     stopped_first.set()
 
         with patch.object(relay_live, "subscribed_channels", side_effect=lambda _origin: dict(desired)), \
+             patch.object(relay_live, "retry_pending", return_value={"sent": [], "pending": False}), \
              patch.object(relay_live, "run", side_effect=worker), \
              patch.object(relay_live, "SUBSCRIPTION_REFRESH_SECONDS", 0.01):
             supervisor = asyncio.create_task(relay_live.run_subscriptions("https://example.com"))
@@ -106,6 +124,74 @@ class SubscriptionBridgeTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 supervisor.cancel()
                 await asyncio.gather(supervisor, return_exceptions=True)
+
+    async def test_owned_bridge_releases_lease_on_cancellation(self):
+        started = asyncio.Event()
+        stopped = asyncio.Event()
+        state = relay_live.BridgeState()
+        lease = SimpleNamespace(close=unittest.mock.Mock())
+
+        async def supervisor(_origin):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                stopped.set()
+
+        with patch.object(relay_live, "DeviceVault") as vault, \
+             patch.object(relay_live.BridgeLease, "acquire", return_value=lease), \
+             patch.object(relay_live, "run_subscriptions", side_effect=supervisor):
+            vault.return_value.load.return_value = SimpleNamespace(device_id=str(uuid4()))
+            task = asyncio.create_task(relay_live.run_owned_bridge("https://example.com", state))
+            await asyncio.wait_for(started.wait(), 3)
+            self.assertEqual(state.status, "running")
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            self.assertTrue(stopped.is_set())
+            lease.close.assert_called_once()
+            self.assertEqual(state.status, "stopped")
+
+    async def test_standby_takes_over_when_owner_exits(self):
+        state = relay_live.BridgeState()
+        started = asyncio.Event()
+        lease = SimpleNamespace(close=unittest.mock.Mock())
+
+        async def supervisor(_origin):
+            started.set()
+            await asyncio.Event().wait()
+
+        with patch.object(relay_live, "DeviceVault") as vault, \
+             patch.object(relay_live.BridgeLease, "acquire", side_effect=[None, lease]), \
+             patch.object(relay_live, "SUBSCRIPTION_REFRESH_SECONDS", 0.01), \
+             patch.object(relay_live, "run_subscriptions", side_effect=supervisor):
+            vault.return_value.load.return_value = SimpleNamespace(device_id=str(uuid4()))
+            task = asyncio.create_task(relay_live.run_owned_bridge("https://example.com", state))
+            try:
+                await asyncio.wait_for(started.wait(), 3)
+                self.assertEqual(state.status, "running")
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            lease.close.assert_called_once()
+
+
+class BridgeLeaseTests(unittest.TestCase):
+    def test_same_device_exclusive_and_distinct_devices_independent(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(
+            "os.environ", {"LOCALAPPDATA": folder, "XDG_STATE_HOME": folder}
+        ):
+            first = relay_live.BridgeLease.acquire("https://example.com", "device-a")
+            self.assertIsNotNone(first)
+            try:
+                self.assertIsNone(relay_live.BridgeLease.acquire("https://example.com", "device-a"))
+                second = relay_live.BridgeLease.acquire("https://example.com", "device-b")
+                self.assertIsNotNone(second)
+                second.close()
+            finally:
+                first.close()
+            replacement = relay_live.BridgeLease.acquire("https://example.com", "device-a")
+            self.assertIsNotNone(replacement)
+            replacement.close()
 
 
 if __name__ == "__main__":

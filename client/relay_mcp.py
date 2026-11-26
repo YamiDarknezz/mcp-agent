@@ -1,6 +1,7 @@
 """Relay MCP tools. Credentials and enrollment codes never enter a tool call."""
 
 import asyncio
+from contextlib import asynccontextmanager
 from http.client import HTTPException
 import json
 import os
@@ -11,6 +12,7 @@ from urllib.request import Request
 from mcp.server.fastmcp import FastMCP
 
 if __package__:
+    from .relay_live import BridgeState, run_owned_bridge
     from .relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox
     from .relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from .relay_workspace import (
@@ -31,6 +33,7 @@ if __package__:
         share as api_share_key,
     )
 else:
+    from relay_live import BridgeState, run_owned_bridge
     from relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox
     from relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from relay_workspace import (
@@ -70,6 +73,7 @@ class RelayStatus(TypedDict):
     ready: bool
     enrollment: Literal["registered", "unregistered", "rejected", "unavailable"]
     is_operator: bool
+    bridge: Literal["starting", "running", "standby", "unregistered", "retrying", "stopped"]
 
 
 class ErrorResult(TypedDict):
@@ -111,7 +115,18 @@ def _safe(origin, action):
 
 def create_server(origin: str) -> FastMCP:
     origin = server_origin(origin)
-    mcp = FastMCP("Relay", instructions=INSTRUCTIONS)
+    bridge_state = BridgeState()
+
+    @asynccontextmanager
+    async def lifespan(_server):
+        task = asyncio.create_task(run_owned_bridge(origin, bridge_state))
+        try:
+            yield {}
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    mcp = FastMCP("Relay", instructions=INSTRUCTIONS, lifespan=lifespan)
 
     @mcp.tool()
     async def status() -> RelayStatus:
@@ -123,7 +138,7 @@ def create_server(origin: str) -> FastMCP:
         )
         return {
             "origin": origin, "healthy": healthy, "ready": ready,
-            "enrollment": enrollment, "is_operator": operator,
+            "enrollment": enrollment, "is_operator": operator, "bridge": bridge_state.status,
         }
 
     @mcp.tool()
@@ -262,7 +277,7 @@ def create_server(origin: str) -> FastMCP:
             "project": "The root is a container with no chat. Create it with a name; Relay creates 'main' automatically.",
             "subchannel": "Create under a project ID or a work subchannel ID. Use access='restricted' to cut inherited access.",
             "encryption": "Run setup_encryption once, compare fingerprints with the other laptop, then share_channel_key and load_channel_key per channel.",
-            "not_yet": ["automatic bridge startup", "mention filtering and alerts", "channel invitations", "file sharing", "task handoff"],
+            "not_yet": ["mention filtering and alerts", "channel invitations", "file sharing", "task handoff"],
             "enrollment": "Ask the human to use relayctl in a private terminal; never paste a code into a tool call.",
         }
 
