@@ -24,6 +24,7 @@ if __package__:
         list_subscriptions as api_list_subscriptions,
     )
     from .relay_keys import (
+        ChannelKeyStore,
         decrypt as api_decrypt,
         encrypt as api_encrypt,
         has_local_key,
@@ -33,6 +34,7 @@ if __package__:
         setup as api_setup_encryption,
         share as api_share_key,
     )
+    from .relay_inbox import Inbox
 else:
     from relay_live import BridgeState, run_owned_bridge
     from relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
@@ -46,6 +48,7 @@ else:
         list_subscriptions as api_list_subscriptions,
     )
     from relay_keys import (
+        ChannelKeyStore,
         decrypt as api_decrypt,
         encrypt as api_encrypt,
         has_local_key,
@@ -55,6 +58,7 @@ else:
         setup as api_setup_encryption,
         share as api_share_key,
     )
+    from relay_inbox import Inbox
 
 
 INSTRUCTIONS = (
@@ -115,6 +119,46 @@ def _safe(origin, action):
         return {"error": str(error)}
 
 
+def _channel_details(origin, bridge_state, channel_id=None):
+    """Read-only per-channel state. Never returns secrets or message content."""
+    device = DeviceVault(origin).load()
+    if device is None:
+        raise IdentityError("Esta laptop no está registrada en Relay.")
+    try:
+        subscriptions = {
+            item["channel_id"]: item["mode"]
+            for item in api_list_subscriptions(origin)["items"]
+        }
+        server_error = None
+    except IdentityError as error:
+        subscriptions = {}
+        server_error = str(error)
+    inbox = Inbox(origin, device.device_id)
+    if channel_id:
+        ids = [channel_id]
+    else:
+        ids = sorted(set(subscriptions) | set(inbox.channel_ids()))
+    channels = []
+    for channel in ids:
+        key_local = ChannelKeyStore(origin).load(channel) is not None
+        mode = subscriptions.get(channel)
+        channels.append({
+            "channel_id": channel,
+            "channel_key_local": key_local,
+            "subscription": mode,
+            "last_seq": inbox.cursor(channel),
+            "bridge_connected": channel in bridge_state.connected_channels,
+        })
+    result = {
+        "channels": channels,
+        "bridge": bridge_state.status,
+        "note": "bridge=running does not guarantee every channel is connected; see bridge_connected per channel.",
+    }
+    if server_error:
+        result["server_error"] = server_error
+    return result
+
+
 def create_server(origin: str) -> FastMCP:
     origin = server_origin(origin)
     bridge_state = BridgeState()
@@ -141,6 +185,7 @@ def create_server(origin: str) -> FastMCP:
         return {
             "origin": origin, "healthy": healthy, "ready": ready,
             "enrollment": enrollment, "is_operator": operator, "bridge": bridge_state.status,
+            "channels": _channel_details(origin, bridge_state)["channels"],
         }
 
     @mcp.tool()
@@ -268,6 +313,11 @@ def create_server(origin: str) -> FastMCP:
         return await asyncio.to_thread(_safe, origin, lambda: api_read_inbox(origin, channel_id, after, limit))
 
     @mcp.tool()
+    async def channel_status(channel_id: str | None = None) -> dict:
+        """Read-only per-channel state: local key, subscription, last local seq and live bridge connection."""
+        return await asyncio.to_thread(_safe, origin, lambda: _channel_details(origin, bridge_state, channel_id))
+
+    @mcp.tool()
     async def my_identity() -> dict:
         """Show this device and account IDs so collaborators can address mentions."""
         def action():
@@ -330,7 +380,7 @@ def create_server(origin: str) -> FastMCP:
             "tools": [
                 "status", "create_project", "list_projects", "create_subchannel", "set_subscription", "list_subscriptions",
                 "setup_encryption", "encryption_status", "share_channel_key",
-                "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "read_inbox", "my_identity", "list_alerts",
+                "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "read_inbox", "channel_status", "my_identity", "list_alerts",
                 "propose_task", "list_tasks", "claim_task", "release_task", "complete_task", "relay_help",
             ],
             "project": "The root is a container with no chat. Create it with a name; Relay creates 'main' automatically.",

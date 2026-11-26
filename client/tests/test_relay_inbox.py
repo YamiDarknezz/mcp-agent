@@ -99,7 +99,7 @@ class SubscriptionBridgeTests(unittest.IsolatedAsyncioTestCase):
         stopped_first = asyncio.Event()
         started_second = asyncio.Event()
 
-        async def worker(_origin, channel):
+        async def worker(_origin, channel, _state=None):
             if channel == first:
                 started_first.set()
             else:
@@ -131,7 +131,7 @@ class SubscriptionBridgeTests(unittest.IsolatedAsyncioTestCase):
         state = relay_live.BridgeState()
         lease = SimpleNamespace(close=unittest.mock.Mock())
 
-        async def supervisor(_origin):
+        async def supervisor(_origin, _state=None):
             started.set()
             try:
                 await asyncio.Event().wait()
@@ -156,7 +156,7 @@ class SubscriptionBridgeTests(unittest.IsolatedAsyncioTestCase):
         started = asyncio.Event()
         lease = SimpleNamespace(close=unittest.mock.Mock())
 
-        async def supervisor(_origin):
+        async def supervisor(_origin, _state=None):
             started.set()
             await asyncio.Event().wait()
 
