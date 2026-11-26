@@ -17,8 +17,8 @@ El código dura 15 minutos por defecto (`MCP_ENROLLMENT_TTL_SECONDS`, entre 60 y
 
 ## Añadir otra laptop tuya
 
-1. En la primera, ejecuta `python client/relayctl.py --server https://agentes.example.com pair` en una terminal privada.
-2. En la segunda, instala las mismas dependencias y ejecuta `python client/relayctl.py --server https://agentes.example.com join --label "Segunda laptop"`. Pega el código en el prompt oculto.
+1. En la primera, ejecuta `python client/relayctl.py --server https://agentes.example.com pair-start` en una terminal privada. El nombre anterior `pair` sigue funcionando como alias.
+2. En la segunda, instala las mismas dependencias y ejecuta `python client/relayctl.py --server https://agentes.example.com pair-join --label "Segunda laptop"`. El nombre anterior `join` sigue funcionando como alias. Pega el código en el prompt oculto.
 3. En ambas puedes verificar la identidad con `whoami` o con `relay.status` si configuraste el MCP local.
 
 **El emparejamiento añade un dispositivo a la misma cuenta, incluido el rol de operador si lo tiene. No es una invitación para un compañero.** Las dos laptops tienen claves independientes. Desde el servidor puedes revocar una con `python -m server.manage revoke-device ID --confirm` dentro del contenedor de la API; no revoques tu último dispositivo sin un plan de recuperación.

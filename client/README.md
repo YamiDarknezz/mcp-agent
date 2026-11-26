@@ -8,7 +8,7 @@ El origen se configura por instalación con `MCP_AGENT_SERVER_URL`, por ejemplo 
 
 ## Identidad local
 
-Instala [`requirements.txt`](requirements.txt) en un entorno virtual. Para registrar o emparejar una laptop, sigue [primera activación](../docs/primera-activacion.md). Se usa Administrador de credenciales en Windows, Keychain en macOS o Secret Service en Linux; si no hay almacén disponible, el alta falla sin guardar la clave en un archivo.
+Instala [`requirements.txt`](requirements.txt) en un entorno virtual. También puedes instalar el paquete desde la raíz del repo con `python -m pip install -e .`, lo que deja disponibles `relayctl` y `relay-mcp` sin rutas absolutas. Para actualizar, ejecuta `scripts/upgrade_client.ps1` en Windows o `scripts/upgrade_client.sh` en Linux/macOS: hace `git pull --ff-only`, reinstala las dependencias y pide reiniciar el proceso MCP. Para registrar o emparejar una laptop, sigue [primera activación](../docs/primera-activacion.md). Se usa Administrador de credenciales en Windows, Keychain en macOS o Secret Service en Linux; si no hay almacén disponible, el alta falla sin guardar la clave en un archivo.
 
 Configura tu runtime para ejecutar Python de ese entorno con la ruta absoluta a [`relay_mcp.py`](relay_mcp.py). Pasa `MCP_AGENT_SERVER_URL` apuntando a tu servicio. No pongas códigos ni claves en la configuración MCP.
 
