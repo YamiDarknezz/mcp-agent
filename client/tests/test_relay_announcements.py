@@ -34,7 +34,10 @@ class AnnouncementTests(unittest.TestCase):
         self.assertEqual(result["status"], "sent")
         args = send.call_args.args
         self.assertEqual(args[1], transport)
-        self.assertEqual(fmt.decode(args[2]), {"channel_id": announced, "note": "Abrir canal"})
+        decoded = fmt.decode(args[2])
+        self.assertEqual(decoded["channel_id"], announced)
+        self.assertEqual(decoded["note"], "Abrir canal")
+        self.assertEqual(decoded["client_version"], "0.2.0")
 
     def test_list_deduplicates_and_ignores_ordinary_messages(self):
         first, second = str(uuid4()), str(uuid4())

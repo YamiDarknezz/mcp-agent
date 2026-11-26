@@ -39,6 +39,8 @@ if __package__:
         share as api_share_key,
     )
     from .relay_inbox import Inbox
+    from .relay_validation import channel_error, choice_error, limit_error, page_error
+    from .relay_version import CLIENT_VERSION, PROTOCOL_VERSION
 else:
     from relay_live import BridgeState, run_owned_bridge
     from relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
@@ -67,6 +69,8 @@ else:
         share as api_share_key,
     )
     from relay_inbox import Inbox
+    from relay_validation import channel_error, choice_error, limit_error, page_error
+    from relay_version import CLIENT_VERSION, PROTOCOL_VERSION
 
 
 INSTRUCTIONS = (
@@ -194,8 +198,14 @@ def create_server(origin: str) -> FastMCP:
         return {
             "origin": origin, "healthy": healthy, "ready": ready,
             "enrollment": enrollment, "is_operator": operator, "bridge": bridge_state.status,
+            "client_version": CLIENT_VERSION, "protocol_version": PROTOCOL_VERSION,
             "channels": _channel_details(origin, bridge_state)["channels"],
         }
+
+    @mcp.tool()
+    async def version() -> dict:
+        """Report this client and protocol version so another laptop can spot an old endpoint."""
+        return {"client_version": CLIENT_VERSION, "protocol_version": PROTOCOL_VERSION}
 
     @mcp.tool()
     async def create_project(name: str, slug: str | None = None) -> dict:
@@ -207,8 +217,9 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def list_projects(limit: int = 50, cursor: str | None = None) -> dict:
         """List the projects this laptop's account can see, newest first, paginated."""
-        if not 1 <= limit <= 100:
-            return {"error": "limit must be between 1 and 100"}
+        problem = limit_error("consulta", limit)
+        if problem:
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_list_projects(origin, limit, cursor),
         )
@@ -218,8 +229,9 @@ def create_server(origin: str) -> FastMCP:
         project_id: str | None = None, limit: int = 50, cursor: str | None = None
     ) -> dict:
         """List accessible channels, optionally filtered by project. Visibility is not access."""
-        if not 1 <= limit <= 100:
-            return {"error": "limit must be between 1 and 100"}
+        problem = limit_error("consulta", limit)
+        if problem:
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_list_channels(origin, project_id, limit, cursor),
         )
@@ -234,8 +246,9 @@ def create_server(origin: str) -> FastMCP:
         parent_id: str, name: str, slug: str | None = None, access: str = "inherit"
     ) -> dict:
         """Create a work subchannel under a visible project or subchannel, not under 'main'."""
-        if access not in {"inherit", "restricted"}:
-            return {"error": "access must be inherit or restricted"}
+        problem = choice_error("create_subchannel", "access", access, {"inherit", "restricted"})
+        if problem:
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_create_subchannel(origin, parent_id, name, slug, access),
         )
@@ -250,8 +263,9 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def list_subscriptions(limit: int = 100, cursor: str | None = None) -> dict:
         """List accessible followed channels; subscriptions are never inherited."""
-        if not 1 <= limit <= 100:
-            return {"error": "limit must be between 1 and 100"}
+        problem = limit_error("consulta", limit)
+        if problem:
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_list_subscriptions(origin, limit, cursor),
         )
@@ -321,6 +335,9 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def send_message(channel_id: str, content: str, mentions: list[str] | None = None) -> dict:
         """Send encrypted test content; optional mentions are account UUIDs encrypted with the content."""
+        problem = channel_error("send_message", channel_id)
+        if problem:
+            return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_send_message(origin, channel_id, content, mentions))
 
     @mcp.tool()
@@ -331,15 +348,17 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def read_messages(channel_id: str, after: int = 0, limit: int = 10) -> dict:
         """Read and locally decrypt a page of channel messages after a sequence."""
-        if after < 0 or not 1 <= limit <= 10:
-            return {"error": "after must be nonnegative and limit must be between 1 and 10"}
+        problem = page_error("consulta", after, limit)
+        if problem:
+            return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_read_messages(origin, channel_id, after, limit))
 
     @mcp.tool()
     async def read_inbox(channel_id: str, after: int = 0, limit: int = 10) -> dict:
         """Read local messages collected by the experimental live bridge."""
-        if after < 0 or not 1 <= limit <= 10:
-            return {"error": "after must be nonnegative and limit must be between 1 and 10"}
+        problem = channel_error("read_inbox", channel_id) or page_error("consulta", after, limit)
+        if problem:
+            return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_read_inbox(origin, channel_id, after, limit))
 
     @mcp.tool()
@@ -355,8 +374,9 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def list_channel_announcements(after: int = 0, limit: int = 10) -> dict:
         """Read deduplicated channel announcements already synced into the local inbox."""
-        if after < 0 or not 1 <= limit <= 10:
-            return {"error": "after must be nonnegative and limit must be between 1 and 10"}
+        problem = page_error("consulta", after, limit)
+        if problem:
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_list_announcements(origin, after, limit),
         )
@@ -375,8 +395,9 @@ def create_server(origin: str) -> FastMCP:
     @mcp.tool()
     async def list_alerts(channel_id: str, after: int = 0, limit: int = 10) -> dict:
         """Inspect local notification candidates without starting or interrupting an agent."""
-        if after < 0 or not 1 <= limit <= 10:
-            return {"error": "after must be nonnegative and limit must be between 1 and 10"}
+        problem = channel_error("list_alerts", channel_id) or page_error("consulta", after, limit)
+        if problem:
+            return problem
         return await asyncio.to_thread(_safe, origin, lambda: api_alerts(origin, channel_id, after, limit))
 
     @mcp.tool()
@@ -394,8 +415,9 @@ def create_server(origin: str) -> FastMCP:
         limit: int = 30,
     ) -> dict:
         """List and locally decrypt tasks in a channel."""
-        if not 1 <= limit <= 100:
-            return {"error": "limit must be between 1 and 100"}
+        problem = limit_error("consulta", limit)
+        if problem:
+            return problem
         return await asyncio.to_thread(
             _safe, origin, lambda: api_list_tasks(origin, channel_id, status, limit),
         )
@@ -422,7 +444,7 @@ def create_server(origin: str) -> FastMCP:
         """Explain how to create projects, channels and shared keys, and what is not implemented yet."""
         return {
             "tools": [
-                "status", "create_project", "list_projects", "list_channels", "directory",
+                "status", "version", "create_project", "list_projects", "list_channels", "directory",
                 "create_subchannel", "set_subscription", "list_subscriptions",
                 "setup_encryption", "encryption_status", "share_channel_key",
                 "load_channel_key", "ensure_channel_key", "channel_status", "crypto_selftest",

@@ -9,7 +9,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 EXPECTED = {
-    "status", "create_project", "list_projects", "list_channels", "directory",
+    "status", "version", "create_project", "list_projects", "list_channels", "directory",
     "create_subchannel", "set_subscription", "list_subscriptions",
     "setup_encryption", "encryption_status", "share_channel_key",
     "load_channel_key", "ensure_channel_key", "channel_status", "crypto_selftest",

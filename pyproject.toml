@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcp-agent-relay"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cliente local del MCP Relay: identidad de dispositivo, herramientas y puente en vivo."
 readme = "README.md"
 requires-python = ">=3.11"
