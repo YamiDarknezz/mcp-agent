@@ -17,6 +17,8 @@ if __package__:
         create_project as api_create_project,
         create_subchannel as api_create_subchannel,
         list_projects as api_list_projects,
+        set_subscription as api_set_subscription,
+        list_subscriptions as api_list_subscriptions,
     )
     from .relay_keys import (
         decrypt as api_decrypt,
@@ -35,6 +37,8 @@ else:
         create_project as api_create_project,
         create_subchannel as api_create_subchannel,
         list_projects as api_list_projects,
+        set_subscription as api_set_subscription,
+        list_subscriptions as api_list_subscriptions,
     )
     from relay_keys import (
         decrypt as api_decrypt,
@@ -150,6 +154,22 @@ def create_server(origin: str) -> FastMCP:
         )
 
     @mcp.tool()
+    async def set_subscription(channel_id: str, mode: Literal["all", "mentions", "muted"] | None) -> dict:
+        """Follow a channel with a preference, or pass null to unfollow. Does not grant access."""
+        return await asyncio.to_thread(
+            _safe, origin, lambda: api_set_subscription(origin, channel_id, mode),
+        )
+
+    @mcp.tool()
+    async def list_subscriptions(limit: int = 100, cursor: str | None = None) -> dict:
+        """List accessible followed channels; subscriptions are never inherited."""
+        if not 1 <= limit <= 100:
+            return {"error": "limit must be between 1 and 100"}
+        return await asyncio.to_thread(
+            _safe, origin, lambda: api_list_subscriptions(origin, limit, cursor),
+        )
+
+    @mcp.tool()
     async def setup_encryption() -> dict:
         """Publish this device's signed encryption key. Run once per laptop. No secret is returned."""
         return await asyncio.to_thread(_safe, origin, lambda: api_setup_encryption(origin))
@@ -235,14 +255,14 @@ def create_server(origin: str) -> FastMCP:
         """Explain how to create projects, channels and shared keys, and what is not implemented yet."""
         return {
             "tools": [
-                "status", "create_project", "list_projects", "create_subchannel",
+                "status", "create_project", "list_projects", "create_subchannel", "set_subscription", "list_subscriptions",
                 "setup_encryption", "encryption_status", "share_channel_key",
                 "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "read_inbox", "relay_help",
             ],
             "project": "The root is a container with no chat. Create it with a name; Relay creates 'main' automatically.",
             "subchannel": "Create under a project ID or a work subchannel ID. Use access='restricted' to cut inherited access.",
             "encryption": "Run setup_encryption once, compare fingerprints with the other laptop, then share_channel_key and load_channel_key per channel.",
-            "not_yet": ["automatic bridge startup", "persistent subscriptions", "channel invitations", "file sharing", "task handoff"],
+            "not_yet": ["automatic bridge startup", "mention filtering and alerts", "channel invitations", "file sharing", "task handoff"],
             "enrollment": "Ask the human to use relayctl in a private terminal; never paste a code into a tool call.",
         }
 

@@ -1,7 +1,7 @@
 """HTTP boundary for projects and channels. Every operation is device-authenticated."""
 
 import asyncio
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Request
 from fastapi.encoders import jsonable_encoder
@@ -57,6 +57,11 @@ class ReadMessagesRequest(Authorized):
     channel_id: UUID4
     after: int = Field(default=0, ge=0)
     limit: int = Field(default=10, ge=1, le=10)
+
+
+class SubscriptionRequest(Authorized):
+    channel_id: UUID4
+    mode: Literal["all", "mentions", "muted"] | None
 
 
 def error(status: int) -> JSONResponse:
@@ -149,3 +154,13 @@ async def send_message(body: SendMessageRequest, request: Request):
 @router.post("/v1/workspace/read-messages")
 async def read_messages(body: ReadMessagesRequest, request: Request):
     return await _run(request, body, messages.read)
+
+
+@router.post("/v1/workspace/set-subscription")
+async def set_subscription(body: SubscriptionRequest, request: Request):
+    return await _run(request, body, workspace.set_subscription)
+
+
+@router.post("/v1/workspace/list-subscriptions")
+async def list_subscriptions(body: ListRequest, request: Request):
+    return await _run(request, body, workspace.list_subscriptions)

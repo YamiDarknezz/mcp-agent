@@ -8,16 +8,20 @@ import os
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
+SUBSCRIPTION_REFRESH_SECONDS = 10
+
 if __package__:
     from .relay_identity import DeviceVault, IdentityError, server_origin
     from .relay_inbox import Inbox
     from .relay_messages import retry_pending
     from .relay_workspace import _call
+    from .relay_workspace import list_subscriptions
 else:
     from relay_identity import DeviceVault, IdentityError, server_origin
     from relay_inbox import Inbox
     from relay_messages import retry_pending
     from relay_workspace import _call
+    from relay_workspace import list_subscriptions
 
 
 def synchronize(origin, channel_id):
@@ -63,12 +67,61 @@ async def run(origin, channel_id):
             await asyncio.sleep(1)
 
 
+def subscribed_channels(origin):
+    channels = {}
+    cursor = None
+    while True:
+        page = list_subscriptions(origin, 100, cursor)
+        for item in page["items"]:
+            channels[item["channel_id"]] = item["mode"]
+        if len(channels) > 100:
+            raise IdentityError("El puente admite hasta 100 canales seguidos.")
+        next_cursor = page["next_cursor"]
+        if not next_cursor:
+            return channels
+        if next_cursor == cursor:
+            raise IdentityError("La paginación de suscripciones no avanzó.")
+        cursor = next_cursor
+
+
+async def run_subscriptions(origin):
+    tasks = {}
+    try:
+        while True:
+            try:
+                channels = await asyncio.to_thread(subscribed_channels, origin)
+            except IdentityError as error:
+                if error.status in {401, 403}:
+                    raise
+                await asyncio.sleep(SUBSCRIPTION_REFRESH_SECONDS)
+                continue
+            # A muted or mentions-only channel still synchronizes its encrypted
+            # inbox. User-facing alerts are a separate, not-yet-built feature.
+            for channel, task in list(tasks.items()):
+                if channel not in channels or task.done():
+                    if not task.done():
+                        task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+                    del tasks[channel]
+            for channel in channels:
+                if channel not in tasks:
+                    tasks[channel] = asyncio.create_task(run(origin, channel))
+            await asyncio.sleep(SUBSCRIPTION_REFRESH_SECONDS)
+    finally:
+        for task in tasks.values():
+            task.cancel()
+        await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Experimental Relay live bridge.")
     parser.add_argument("--server", default=os.getenv("MCP_AGENT_SERVER_URL"))
-    parser.add_argument("--channel", required=True)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--channel")
+    selection.add_argument("--subscriptions", action="store_true")
     args = parser.parse_args()
-    asyncio.run(run(server_origin(args.server), args.channel))
+    origin = server_origin(args.server)
+    asyncio.run(run_subscriptions(origin) if args.subscriptions else run(origin, args.channel))
 
 
 if __name__ == "__main__":

@@ -226,3 +226,42 @@ async def list_channels(conn, user_id, data):
         if root["kind"] != policy.ChannelKind.PROJECT:
             raise Denied(404)
     return await _page(conn, user_id, data, roots=False, project_id=data.project_id)
+
+
+async def set_subscription(conn, user_id, data):
+    channel, role = await _scope(conn, user_id, data.channel_id)
+    if not policy.allows(role, policy.ChannelKind(channel["kind"]), policy.Permission.SUBSCRIBE):
+        raise Denied(403)
+    if data.mode is None:
+        await conn.execute(text("""
+            DELETE FROM channel_subscriptions WHERE channel_id=:channel AND user_id=:user_id
+        """), {"channel": data.channel_id, "user_id": user_id})
+    else:
+        await conn.execute(text("""
+            INSERT INTO channel_subscriptions (channel_id, user_id, mode)
+            VALUES (:channel, :user_id, :mode)
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET mode=EXCLUDED.mode
+        """), {"channel": data.channel_id, "user_id": user_id, "mode": data.mode})
+    return {"channel_id": str(data.channel_id), "mode": data.mode}
+
+
+async def list_subscriptions(conn, user_id, data):
+    rows = (await conn.execute(text("""
+        SELECT channel_id, mode FROM channel_subscriptions
+        WHERE user_id=:user_id AND (:first OR channel_id > CAST(:cursor AS uuid))
+        ORDER BY channel_id LIMIT :limit
+    """), {"user_id": user_id, "first": data.cursor is None, "cursor": data.cursor,
+           "limit": data.limit + 1})).mappings().all()
+    scanned = rows[:data.limit]
+    items = []
+    for row in scanned:
+        try:
+            channel, role = await _scope(conn, user_id, row["channel_id"])
+        except Denied:
+            continue
+        if policy.allows(role, policy.ChannelKind(channel["kind"]), policy.Permission.SUBSCRIBE):
+            items.append({"channel_id": str(row["channel_id"]), "mode": row["mode"]})
+    return {
+        "items": items,
+        "next_cursor": str(scanned[-1]["channel_id"]) if len(rows) > data.limit else None,
+    }

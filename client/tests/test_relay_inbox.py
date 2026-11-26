@@ -1,3 +1,4 @@
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,7 @@ from uuid import uuid4
 
 from client.relay_inbox import Inbox
 from client import relay_live
+from client.relay_identity import IdentityError
 
 
 def event(seq):
@@ -52,6 +54,58 @@ class InboxTests(unittest.TestCase):
                 inbox = Inbox("https://example.com", "ignored", path)
                 self.assertEqual(inbox.cursor(channel), 13)
                 self.assertEqual(len(inbox.page(channel, after=10)), 3)
+
+    def test_subscriptions_paginate_without_inheriting_unlisted_channels(self):
+        first, second = str(uuid4()), str(uuid4())
+        pages = [
+            {"items": [{"channel_id": first, "mode": "muted"}], "next_cursor": "next"},
+            {"items": [{"channel_id": second, "mode": "mentions"}], "next_cursor": None},
+        ]
+        with patch.object(relay_live, "list_subscriptions", side_effect=pages) as fetch:
+            self.assertEqual(relay_live.subscribed_channels("https://example.com"), {
+                first: "muted", second: "mentions",
+            })
+            self.assertEqual(fetch.call_args_list[1].args[2], "next")
+
+    def test_subscription_pagination_must_advance(self):
+        page = {"items": [], "next_cursor": "same"}
+        with patch.object(relay_live, "list_subscriptions", return_value=page):
+            with self.assertRaises(IdentityError):
+                relay_live.subscribed_channels("https://example.com")
+
+
+class SubscriptionBridgeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_bridge_follows_and_unfollows_without_affecting_other_tasks(self):
+        first, second = str(uuid4()), str(uuid4())
+        desired = {first: "all"}
+        started_first = asyncio.Event()
+        stopped_first = asyncio.Event()
+        started_second = asyncio.Event()
+
+        async def worker(_origin, channel):
+            if channel == first:
+                started_first.set()
+            else:
+                started_second.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                if channel == first:
+                    stopped_first.set()
+
+        with patch.object(relay_live, "subscribed_channels", side_effect=lambda _origin: dict(desired)), \
+             patch.object(relay_live, "run", side_effect=worker), \
+             patch.object(relay_live, "SUBSCRIPTION_REFRESH_SECONDS", 0.01):
+            supervisor = asyncio.create_task(relay_live.run_subscriptions("https://example.com"))
+            try:
+                await asyncio.wait_for(started_first.wait(), 3)
+                desired.clear()
+                desired[second] = "muted"
+                await asyncio.wait_for(stopped_first.wait(), 3)
+                await asyncio.wait_for(started_second.wait(), 3)
+            finally:
+                supervisor.cancel()
+                await asyncio.gather(supervisor, return_exceptions=True)
 
 
 if __name__ == "__main__":

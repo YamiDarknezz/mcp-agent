@@ -20,6 +20,8 @@ El MCP ofrece:
 | `create_project(name, slug?)` | Crea el proyecto y su `main` en una sola operación. |
 | `list_projects(limit?, cursor?)` | Lista los proyectos visibles para tu cuenta. |
 | `create_subchannel(parent_id, name, slug?, access?)` | Crea un subcanal de trabajo; `access` es `inherit` o `restricted`. |
+| `set_subscription` | Sigue un canal con preferencia `all`, `mentions` o `muted`; `null` deja de seguirlo. No concede acceso. |
+| `list_subscriptions` | Lista las suscripciones accesibles, sin herencia automática. |
 | `setup_encryption` | Publica la clave de cifrado firmada de esta laptop. Una vez por equipo. |
 | `encryption_status` | Muestra huellas de dispositivos y si ya hay clave de un canal. |
 | `share_channel_key` | Crea una clave de canal y la envía envuelta solo a dispositivos autorizados. |
@@ -48,13 +50,15 @@ python client\relayctl.py --server https://relay.darknezz.dev trust-device ID_DE
 
 Después usa `share_channel_key` con el ID del canal y `load_channel_key` en la otra laptop. Las claves de canal y las huellas fijadas se guardan en el almacén seguro del sistema. Los sobres antiguos sin firma se rechazan; para pruebas nuevas crea un canal y una clave nuevos, sin eliminar datos anteriores.
 
-Para probar avisos en vivo, ejecuta el puente como proceso separado, una vez por canal:
+Para sincronizar los canales seguidos, inicia el puente como proceso separado:
 
 ```powershell
-python -m client.relay_live --server https://relay.darknezz.dev --channel ID_DEL_CANAL
+python -m client.relay_live --server https://relay.darknezz.dev --subscriptions
 ```
 
-El puente guarda mensajes cifrados y su cursor localmente y reintenta la cola de salida mientras está conectado. La herramienta `read_inbox` permite leer el buzón sin interrumpir al agente. Debe ejecutarse de forma explícita: todavía no hay gestor automático del proceso ni suscripciones persistentes.
+El puente actualiza la lista de canales seguidos periódicamente, guarda mensajes cifrados y su cursor localmente y reintenta la cola de salida mientras está conectado. La herramienta `read_inbox` permite leer el buzón sin interrumpir al agente. También se puede usar `--channel ID_DEL_CANAL` para probar uno solo. El proceso aún debe iniciarse explícitamente.
+
+Las preferencias se guardan para la cuenta y se sincronizan entre dispositivos; ninguna concede acceso ni se hereda a hijos. **Todavía no hay filtrado de menciones ni avisos:** los tres modos sincronizan el buzón cifrado por igual.
 
 Los mensajes son experimentales: aunque los sobres nuevos van firmados y los dispositivos remotos deben fijarse, aún faltan revisión del protocolo, rotación y protección contra omisiones o reordenamientos por el servidor. No usar datos sensibles.
 

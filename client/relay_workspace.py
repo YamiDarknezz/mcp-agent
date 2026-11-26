@@ -68,3 +68,11 @@ def list_projects(origin: str, limit: int = 50, cursor: str | None = None) -> Pa
     if cursor:
         payload["cursor"] = cursor
     return _call(origin, "/v1/workspace/list-projects", payload)
+
+
+def set_subscription(origin: str, channel_id: str, mode: str | None) -> dict[str, Any]:
+    return _call(origin, "/v1/workspace/set-subscription", {"channel_id": channel_id, "mode": mode})
+
+
+def list_subscriptions(origin: str, limit: int = 100, cursor: str | None = None) -> dict[str, Any]:
+    return _call(origin, "/v1/workspace/list-subscriptions", {"limit": limit, "cursor": cursor})

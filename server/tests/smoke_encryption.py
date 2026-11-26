@@ -189,6 +189,44 @@ def main():
         """), {"channel": channel_id, "user_id": reader_user})
     asyncio.run(console(add_fixtures))
 
+    status, subscribed = post("/v1/workspace/list-subscriptions", alice.proof("workspace"))
+    assert status == 200 and subscribed["items"] == [{"channel_id": channel_id, "mode": "mentions"}]
+    status, work = post("/v1/workspace/subchannels", {
+        **alice.proof("workspace"), "parent_id": root_id, "name": "Development",
+    })
+    assert status == 200
+    work_id = work["channel"]["id"]
+    status, subscribed = post("/v1/workspace/list-subscriptions", bob.proof("workspace"))
+    assert status == 200 and subscribed["items"] == [{"channel_id": channel_id, "mode": "mentions"}]
+    status, _ = post("/v1/workspace/set-subscription", {
+        **alice.proof("workspace"), "channel_id": root_id, "mode": "all",
+    })
+    assert status == 403
+    status, _ = post("/v1/workspace/set-subscription", {
+        **outsider.proof("workspace"), "channel_id": work_id, "mode": "all",
+    })
+    assert status == 404
+    for mode in ("all", "muted", "mentions"):
+        status, changed = post("/v1/workspace/set-subscription", {
+            **alice.proof("workspace"), "channel_id": work_id, "mode": mode,
+        })
+        assert status == 200 and changed["mode"] == mode
+    status, first_page = post("/v1/workspace/list-subscriptions", {
+        **alice.proof("workspace"), "limit": 1,
+    })
+    assert status == 200 and len(first_page["items"]) == 1 and first_page["next_cursor"]
+    status, second_page = post("/v1/workspace/list-subscriptions", {
+        **alice.proof("workspace"), "limit": 1, "cursor": first_page["next_cursor"],
+    })
+    assert status == 200 and len(second_page["items"]) == 1
+    assert {first_page["items"][0]["channel_id"], second_page["items"][0]["channel_id"]} == {channel_id, work_id}
+    status, _ = post("/v1/workspace/set-subscription", {
+        **alice.proof("workspace"), "channel_id": work_id, "mode": None,
+    })
+    assert status == 200
+    status, subscribed = post("/v1/workspace/list-subscriptions", alice.proof("workspace"))
+    assert status == 200 and subscribed["items"] == [{"channel_id": channel_id, "mode": "mentions"}]
+
     for target in (outsider, revoked):
         status, _ = post("/v1/keys/publish", {
             **alice.proof("workspace"), "channel_id": channel_id, "key_id": str(uuid4()),
