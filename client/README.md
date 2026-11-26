@@ -31,6 +31,8 @@ El MCP ofrece:
 | `read_messages` | Consulta y descifra una página después de una secuencia. |
 | `retry_messages` | Reintenta los mensajes cifrados pendientes conservando su ID de operación. |
 | `read_inbox` | Lee el buzón cifrado local que sincroniza el puente en vivo. |
+| `my_identity` | Muestra los IDs de cuenta y dispositivo para dirigir menciones. |
+| `list_alerts` | Consulta candidatos de aviso del buzón local según la suscripción actual. |
 | `relay_help` | Explica las herramientas y lo que aún no existe. |
 
 No hay que darle comandos al agente: OpenCode descubre nombres, parámetros y descripciones. Podrás decir «crea un canal para Tesis». Ninguna herramienta acepta códigos de invitación ni credenciales.
@@ -60,7 +62,9 @@ python -m client.relay_live --server https://relay.darknezz.dev --subscriptions
 
 El puente actualiza la lista de canales seguidos periódicamente, guarda mensajes cifrados y su cursor localmente y reintenta la cola de salida, incluso si no hay canales seguidos. La herramienta `read_inbox` permite leer el buzón sin interrumpir al agente. También se puede usar `--channel ID_DEL_CANAL` para probar uno solo; ese modo aislado no reintenta la cola automáticamente.
 
-Las preferencias se guardan para la cuenta y se sincronizan entre dispositivos; ninguna concede acceso ni se hereda a hijos. **Todavía no hay filtrado de menciones ni avisos:** los tres modos sincronizan el buzón cifrado por igual.
+Las preferencias se guardan para la cuenta y se sincronizan entre dispositivos; ninguna concede acceso ni se hereda a hijos. Los tres modos sincronizan el buzón cifrado por igual. Al consultar `list_alerts`, `all` incluye mensajes de otros dispositivos, `mentions` solo incluye mensajes que contienen el ID de tu cuenta y `muted` no devuelve avisos. Las menciones se incluyen dentro del mensaje cifrado; usa `my_identity` para obtener el ID y pásalo en `mentions` al enviar. Un ID mencionado no concede acceso.
+
+`list_alerts` examina una página local y devuelve `next_after` para continuar incluso si esa página no contiene avisos. Es una consulta bajo demanda: no envía notificaciones al sistema, no inicia turnos del agente ni sincroniza el estado de lectura entre dispositivos. Ambos extremos deben actualizar el cliente para interpretar el nuevo formato de mensajes; los mensajes anteriores siguen siendo legibles.
 
 Los mensajes son experimentales: aunque los sobres nuevos van firmados y los dispositivos remotos deben fijarse, aún faltan revisión del protocolo, rotación y protección contra omisiones o reordenamientos por el servidor. No usar datos sensibles.
 

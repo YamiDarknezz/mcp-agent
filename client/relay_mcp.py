@@ -13,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 
 if __package__:
     from .relay_live import BridgeState, run_owned_bridge
-    from .relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox
+    from .relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
     from .relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from .relay_workspace import (
         create_project as api_create_project,
@@ -34,7 +34,7 @@ if __package__:
     )
 else:
     from relay_live import BridgeState, run_owned_bridge
-    from relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox
+    from relay_messages import send as api_send_message, read as api_read_messages, retry_pending as api_retry_pending, read_inbox as api_read_inbox, alerts as api_alerts
     from relay_identity import DeviceVault, IdentityError, identify, opener, server_origin
     from relay_workspace import (
         create_project as api_create_project,
@@ -242,9 +242,9 @@ def create_server(origin: str) -> FastMCP:
         return await asyncio.to_thread(_safe, origin, action)
 
     @mcp.tool()
-    async def send_message(channel_id: str, content: str) -> dict:
-        """Queue and send a test message encrypted locally; pending messages can be retried."""
-        return await asyncio.to_thread(_safe, origin, lambda: api_send_message(origin, channel_id, content))
+    async def send_message(channel_id: str, content: str, mentions: list[str] | None = None) -> dict:
+        """Send encrypted test content; optional mentions are account UUIDs encrypted with the content."""
+        return await asyncio.to_thread(_safe, origin, lambda: api_send_message(origin, channel_id, content, mentions))
 
     @mcp.tool()
     async def retry_messages() -> dict:
@@ -266,18 +266,36 @@ def create_server(origin: str) -> FastMCP:
         return await asyncio.to_thread(_safe, origin, lambda: api_read_inbox(origin, channel_id, after, limit))
 
     @mcp.tool()
+    async def my_identity() -> dict:
+        """Show this device and account IDs so collaborators can address mentions."""
+        def action():
+            key = DeviceVault(origin).load()
+            if key is None:
+                raise IdentityError("Esta laptop no está registrada en Relay.")
+            summary = identify(origin, key)
+            return {"device_id": summary["device_id"], "account_id": summary["account_id"]}
+        return await asyncio.to_thread(_safe, origin, action)
+
+    @mcp.tool()
+    async def list_alerts(channel_id: str, after: int = 0, limit: int = 10) -> dict:
+        """Inspect local notification candidates without starting or interrupting an agent."""
+        if after < 0 or not 1 <= limit <= 10:
+            return {"error": "after must be nonnegative and limit must be between 1 and 10"}
+        return await asyncio.to_thread(_safe, origin, lambda: api_alerts(origin, channel_id, after, limit))
+
+    @mcp.tool()
     async def relay_help() -> dict:
         """Explain how to create projects, channels and shared keys, and what is not implemented yet."""
         return {
             "tools": [
                 "status", "create_project", "list_projects", "create_subchannel", "set_subscription", "list_subscriptions",
                 "setup_encryption", "encryption_status", "share_channel_key",
-                "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "read_inbox", "relay_help",
+                "load_channel_key", "crypto_selftest", "send_message", "read_messages", "retry_messages", "read_inbox", "my_identity", "list_alerts", "relay_help",
             ],
             "project": "The root is a container with no chat. Create it with a name; Relay creates 'main' automatically.",
             "subchannel": "Create under a project ID or a work subchannel ID. Use access='restricted' to cut inherited access.",
             "encryption": "Run setup_encryption once, compare fingerprints with the other laptop, then share_channel_key and load_channel_key per channel.",
-            "not_yet": ["mention filtering and alerts", "channel invitations", "file sharing", "task handoff"],
+            "not_yet": ["push notifications", "cross-device alert read state", "channel invitations", "file sharing", "task handoff"],
             "enrollment": "Ask the human to use relayctl in a private terminal; never paste a code into a tool call.",
         }
 
