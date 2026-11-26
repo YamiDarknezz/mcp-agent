@@ -18,7 +18,21 @@ else:
 
 
 def _aad_sequence(operation_id: str) -> int:
+    """Legacy AAD value used before the server sequence was authenticated."""
     return UUID(operation_id).int & ((1 << 64) - 1)
+
+
+def _decrypt_item(origin, channel_id, item):
+    """Try the server sequence first, then the legacy operation-derived value."""
+    errors = []
+    for seq in (item["seq"], _aad_sequence(item["operation_id"])):
+        try:
+            return relay_keys.decrypt(
+                origin, channel_id, seq, item["nonce"], item["ciphertext"]
+            )
+        except (ValueError, IdentityError) as error:
+            errors.append(error)
+    raise IdentityError("Mensaje inválido o reordenado por el servidor.") from errors[-1]
 
 
 def send(origin: str, channel_id: str, content: str, mentions: list[str] | None = None) -> dict:
@@ -30,8 +44,14 @@ def send(origin: str, channel_id: str, content: str, mentions: list[str] | None 
     if device is None:
         raise IdentityError("Esta laptop no está registrada en Relay.")
     operation_id = str(uuid4())
-    encrypted = relay_keys.encrypt(origin, channel_id, _aad_sequence(operation_id), raw)
-    payload = {"channel_id": channel_id, "operation_id": operation_id, **encrypted}
+    # Predict the server sequence from the local cursor. The server must reject
+    # with 409 when it disagrees, so no ciphertext is ever bound to a wrong seq.
+    expected_seq = Inbox(origin, device.device_id).cursor(channel_id) + 1
+    encrypted = relay_keys.encrypt(origin, channel_id, expected_seq, raw)
+    payload = {
+        "channel_id": channel_id, "operation_id": operation_id,
+        "expected_seq": expected_seq, **encrypted,
+    }
     outbox = Outbox(origin, device.device_id)
     outbox.add(payload)
     try:
@@ -40,6 +60,18 @@ def send(origin: str, channel_id: str, content: str, mentions: list[str] | None 
         return {"operation_id": operation_id, "status": "pending", "error": str(error)}
     if result.get("operation_id") != operation_id or not isinstance(result.get("seq"), int):
         return {"operation_id": operation_id, "status": "pending", "error": "Respuesta de Relay inválida."}
+    if result["seq"] != expected_seq:
+        # Only an idempotent retry may legitimately return a different seq.
+        # The server returns its stored seq for the same operation_id; if it
+        # differs, the ciphertext was bound to the wrong value and is unusable.
+        outbox.remove(operation_id)
+        return {
+            "operation_id": operation_id, "status": "rejected",
+            "error": (
+                f"Relay asignó seq {result['seq']}; el ciphertext quedó ligado a {expected_seq}. "
+                "Borra el borrador y vuelve a enviar el contenido."
+            ),
+        }
     outbox.remove(operation_id)
     return {**result, "status": "sent"}
 
@@ -57,6 +89,17 @@ def retry_pending(origin: str, limit: int = 100) -> dict:
             return {"sent": sent, "pending": True, "error": str(error)}
         if result.get("operation_id") != payload["operation_id"] or not isinstance(result.get("seq"), int):
             return {"sent": sent, "pending": True, "error": "Respuesta de Relay inválida."}
+        # On an idempotent retry the server returns the stored seq without
+        # validating expected_seq; it must match the ciphertext's binding.
+        if result["seq"] != payload.get("expected_seq"):
+            outbox.remove(payload["operation_id"])
+            return {
+                "sent": sent, "pending": True,
+                "error": (
+                    f"Relay devolvió seq {result['seq']}; el ciphertext quedó ligado a "
+                    f"{payload.get('expected_seq')}. Descarta el borrador."
+                ),
+            }
         outbox.remove(payload["operation_id"])
         sent.append(result)
     return {"sent": sent, "pending": bool(outbox.pending(1))}
@@ -68,11 +111,10 @@ def read(origin: str, channel_id: str, after: int = 0, limit: int = 10) -> dict:
     })
     for item in result["messages"]:
         try:
-            raw = relay_keys.decrypt(
-                origin, channel_id, _aad_sequence(item["operation_id"]),
-                item.pop("nonce"), item.pop("ciphertext"),
-            )
+            raw = _decrypt_item(origin, channel_id, item)
             item["content"], item["mentions"] = relay_message_format.decode(raw)
+            item.pop("nonce", None)
+            item.pop("ciphertext", None)
         except (ValueError, UnicodeDecodeError):
             raise IdentityError("No se pudo descifrar un mensaje del canal.") from None
     return result
@@ -86,11 +128,10 @@ def read_inbox(origin: str, channel_id: str, after: int = 0, limit: int = 10) ->
     items = inbox.page(channel_id, after, limit)
     for item in items:
         try:
-            raw = relay_keys.decrypt(
-                origin, channel_id, _aad_sequence(item["operation_id"]),
-                item.pop("nonce"), item.pop("ciphertext"),
-            )
+            raw = _decrypt_item(origin, channel_id, item)
             item["content"], item["mentions"] = relay_message_format.decode(raw)
+            item.pop("nonce", None)
+            item.pop("ciphertext", None)
         except (ValueError, UnicodeDecodeError):
             raise IdentityError("No se pudo descifrar un mensaje del buzón.") from None
     return {"messages": items, "cursor": inbox.cursor(channel_id)}
