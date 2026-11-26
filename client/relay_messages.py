@@ -113,6 +113,8 @@ def read(origin: str, channel_id: str, after: int = 0, limit: int = 10) -> dict:
         try:
             raw = _decrypt_item(origin, channel_id, item)
             item["content"], item["mentions"] = relay_message_format.decode(raw)
+            item.pop("nonce", None)
+            item.pop("ciphertext", None)
         except (ValueError, UnicodeDecodeError):
             raise IdentityError("No se pudo descifrar un mensaje del canal.") from None
     return result
@@ -128,6 +130,8 @@ def read_inbox(origin: str, channel_id: str, after: int = 0, limit: int = 10) ->
         try:
             raw = _decrypt_item(origin, channel_id, item)
             item["content"], item["mentions"] = relay_message_format.decode(raw)
+            item.pop("nonce", None)
+            item.pop("ciphertext", None)
         except (ValueError, UnicodeDecodeError):
             raise IdentityError("No se pudo descifrar un mensaje del buzón.") from None
     return {"messages": items, "cursor": inbox.cursor(channel_id)}
