@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from server import identity, identity_api, keys_api, live, settings, tasks_api, workspace_api
+from server import identity, identity_api, invitations_api, keys_api, live, settings, tasks_api, workspace_api
 
 
 @asynccontextmanager
@@ -41,6 +41,7 @@ app.include_router(workspace_api.router)
 app.include_router(keys_api.router)
 app.include_router(live.router)
 app.include_router(tasks_api.router)
+app.include_router(invitations_api.router)
 
 
 class BodyLimit:
